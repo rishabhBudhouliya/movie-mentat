@@ -35,6 +35,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           </a>
           .
         </p>
+        <p className="mx-auto mt-2 max-w-3xl px-4 sm:px-6">
+          <a
+            href="/privacy"
+            className="underline underline-offset-2 hover:text-amber-600 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-400"
+          >
+            Privacy policy
+          </a>
+        </p>
       </footer>
     </div>
   );

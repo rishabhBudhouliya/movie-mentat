@@ -15,7 +15,11 @@ Callback path used below: `/api/auth/callback/google`. `<PROD>` is `movie-mentat
 1. console.cloud.google.com → check the account switcher shows your personal account → New project `movie-memory`.
 2. **Google Auth Platform → Get started**: app name, support email, Audience **External**.
 3. **Data access**: add only `openid`, `email`, `profile` (non-sensitive, so no verification needed).
-4. **Branding**: don't upload a logo. It triggers brand verification.
+4. **Branding** (now required before the app can be published):
+   - **App homepage:** `https://movie-mentat.vercel.app`
+   - **Privacy policy:** `https://movie-mentat.vercel.app/privacy` (the `/privacy` page in this repo; it must be deployed first)
+   - **Authorized domains:** add `movie-mentat.vercel.app` if Google asks for the domain of those links.
+   - Don't upload a logo. It triggers brand verification.
 5. **Clients → Create client → Web application**
    - Authorized JavaScript origins: `http://localhost:3000`, `https://<PROD>`
    - Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google`, `https://<PROD>/api/auth/callback/google`
