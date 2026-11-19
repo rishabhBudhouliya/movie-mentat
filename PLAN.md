@@ -62,7 +62,7 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 - **Install scripts denied by default**, with an explicit allowlist.
 - **`--frozen-lockfile`** in CI and on Vercel. The lockfile changes only in a commit that adds a dependency.
 - **No unpinned `dlx`/`npx`.** That includes scaffolding.
-- **Agents never add a dependency.** Each one is proposed with its dependents count, transitive deps, license and maintainers, approved by the author, and committed on its own with the lockfile diff.
+- **Only Claude adds dependencies** (subagents never install). Each one passes the vetting checklist below and is committed on its own with the lockfile diff. Pre-approval by the author was dropped mid-build because it blocked progress; every addition is recorded in the **dependency log** below for the author to triage after the work is done.
 - **Prisma pinned to 7.9.1.** Prisma's `latest` tag currently points to an 8.0 RC. The `prisma` CLI 7.10.x is published with a token and no provenance (prisma/orm#30850), so `trustPolicy` refuses it. 7.9.1 has provenance on every Prisma package, so the policy has no exceptions.
 - **Vetting checklist** for every dependency: dependents/downloads, transitive deps, license, maintainers, **deprecation status**, **trusted publishing + provenance**, and install scripts (read before deciding).
 - **Reviewed and blocked install scripts:** `prisma` preinstall (Node version check only) and `@prisma/engines` postinstall (schema-engine download; the CLI fetches it on first use instead, verified).
@@ -70,6 +70,19 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 Runtime: `next`, `react`, `@prisma/client` + `@prisma/adapter-pg` (7.9.1; `adapter-pg` because the same TCP driver works against local Docker Postgres in tests and Neon in production, and it supports the interactive transaction the advisory lock needs), `openid-client`, `zod`, `openai` (later).
 Dev: `prisma` (7.9.1), `typescript` (6.0.3), `@biomejs/biome`, `tailwindcss`, `vitest` and `@vitest/coverage-v8` (later).
 shadcn/ui is still to be decided. It copies component code into the repo and pulls in Radix and related packages.
+
+### Dependency log (for later triage)
+
+| Package | Version | Added for | Vetting notes |
+|---|---|---|---|
+| `next`, `react`, `react-dom` | 16.4.6, 19.3.1 | Required stack | Approved by the author |
+| `tailwindcss`, `@tailwindcss/postcss` | 4.3.5 | Required stack | Approved by the author |
+| `typescript`, `@types/*` | 6.0.3 | Types | Approved by the author (decision 8) |
+| `@biomejs/biome` | 2.6.8 | Lint/format | Approved by the author (decision 9) |
+| `openid-client` (+ `jose`, `oauth4webapi`) | 6.9.0 | Google OIDC | Approved by the author (decision 3) |
+| `zod` | 4.6.7 | Boundary parsing | Approved by the author |
+| `@prisma/client`, `@prisma/adapter-pg`, `prisma` | 7.9.1 | Required stack | Approved by the author; 7.9.1 for provenance |
+| `vitest`, `@vitest/coverage-v8` | 5.1.0 | Tests + coverage gate | **Added without pre-approval.** 194M/66M weekly downloads, MIT, not deprecated, trusted publishing + provenance, no install scripts. 5.1.0 because 5.1.1 was inside the 72h cooldown. |
 
 ## Delegation
 
