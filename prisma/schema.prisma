@@ -1,0 +1,92 @@
+// Movie Memory schema. Decisions: PLAN.md #1, #4, #5, #10.
+// Tables and columns are snake_case because the fact service uses raw SQL
+// (advisory locks, clock_timestamp()).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Local snapshot of a TMDB catalog entry, so a saved favorite stays
+/// viewable during a catalog outage.
+model Movie {
+  tmdbId      Int     @id @map("tmdb_id")
+  title       String
+  releaseYear Int?    @map("release_year")
+  posterPath  String? @map("poster_path")
+
+  favoritedBy User[]
+  facts       Fact[]
+  genStates   FactGenState[]
+
+  @@map("movies")
+}
+
+/// "Onboarded" means favoriteMovieId is set.
+model User {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  googleSub       String   @unique @map("google_sub")
+  email           String
+  name            String?
+  avatarUrl       String?  @map("avatar_url")
+  favoriteMovieId Int?     @map("favorite_movie_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  favoriteMovie Movie?         @relation(fields: [favoriteMovieId], references: [tmdbId])
+  sessions      Session[]
+  facts         Fact[]
+  genStates     FactGenState[]
+
+  @@map("users")
+}
+
+/// The cookie holds a random token; only its SHA-256 hash is stored, so a
+/// database leak doesn't yield live sessions.
+model Session {
+  tokenHash String   @id @map("token_hash")
+  userId    String   @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Only successful generations are stored. Freshness ("lastSuccessAt") is the
+/// newest createdAt for (user, movie), so a failure can't advance it (TLA+ S5).
+model Fact {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  movieId   Int      @map("movie_id")
+  text      String
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie @relation(fields: [movieId], references: [tmdbId])
+
+  @@index([userId, movieId, createdAt(sort: Desc)])
+  @@map("facts")
+}
+
+/// Generation coordination per (user, movie), read only while holding the
+/// advisory lock. attemptNo orders attempts (TLA+ F1). The failure pair is
+/// all-or-nothing, enforced by CHECK constraints in the migration.
+model FactGenState {
+  userId          String    @map("user_id") @db.Uuid
+  movieId         Int       @map("movie_id")
+  attemptNo       Int       @default(0) @map("attempt_no")
+  failedAttemptNo Int?      @map("failed_attempt_no")
+  failedAt        DateTime? @map("failed_at") @db.Timestamptz(6)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie @relation(fields: [movieId], references: [tmdbId])
+
+  @@id([userId, movieId])
+  @@map("fact_gen_states")
+}

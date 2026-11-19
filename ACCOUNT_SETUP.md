@@ -2,12 +2,12 @@
 
 Use your **personal** accounts (not FrontierX) for everything. Put secrets straight into `.env.local`, not into chat.
 
-Callback path used below: `/api/auth/callback/google`. `<PROD>` is the Vercel URL you get in step 3.
+Callback path used below: `/api/auth/callback/google`. `<PROD>` is `movie-mentat.vercel.app`, the stable production domain. Not the per-deployment `movie-mentat-<hash>-…` URLs.
 
 ## 1. Neon (Postgres)
-1. neon.tech → New project → name `movie-memory`, Postgres 17, region **AWS us-east-1** (matches Vercel's default `iad1`).
+1. neon.tech → New project → name `movie-memory`, Postgres 18 (matches local Docker), region **AWS us-east-1** (matches Vercel's default `iad1`).
 2. Dashboard → Connect → copy **two** strings:
-   - Pooled (host contains `-pooler`) → `DATABASE_URL`
+   - Pooled (host contains `-pooler`) → `DATABASE_URL`. In both strings, change `sslmode=require` to `sslmode=verify-full` (strict certificate checking with the `pg` driver).
    - Direct (pooling off) → `DIRECT_URL` (migrations only)
 3. Optional: create a `dev` branch and use its strings locally; keep `main` for production.
 

@@ -43,7 +43,7 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 - **Branded IDs:** `UserId`, `TmdbId`, `FactId`.
 - **Sum types for outcomes:** `FactOutcome = fresh | cached | fallback | unavailable`, checked exhaustively with `assertNever`. Model abstention is a structured-output union.
 - **Parse, don't validate.** Zod turns input into branded types at the boundary.
-- **Impossible states can't be stored.** The generation-state row uses a status enum plus a `CHECK` constraint, and is parsed into a TypeScript union at the repository boundary.
+- **Impossible states can't be stored.** Hand-written `CHECK` constraints in the init migration (the failure pair is all-or-nothing; a failed attempt must have been started; non-empty fact and title text). Rows are parsed into TypeScript unions at the repository boundary.
 - **Explicit public data types.** Prisma rows never reach the client.
 - **No FP library** (no fp-ts or Effect). A hand-written `Result` is about 10 lines.
 
