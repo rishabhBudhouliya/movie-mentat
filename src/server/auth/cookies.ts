@@ -71,3 +71,16 @@ export function decodeLoginTransaction(value: string | undefined): LoginTransact
     return null;
   }
 }
+
+/**
+ * True only for a callback carrying exactly one `state` equal to this
+ * browser's pending login. A stale tab or an unsolicited callback must not
+ * consume (and so cancel) the login that is actually in progress.
+ */
+export function callbackMatchesTransaction(
+  searchParams: URLSearchParams,
+  transaction: LoginTransaction,
+): boolean {
+  const states = searchParams.getAll("state");
+  return states.length === 1 && states[0] === transaction.state;
+}

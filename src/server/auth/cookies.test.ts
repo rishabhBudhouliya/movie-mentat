@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  callbackMatchesTransaction,
   decodeLoginTransaction,
   encodeLoginTransaction,
   expiredCookieOptions,
@@ -50,5 +51,19 @@ describe("cookie hardening", () => {
 
   it("clears with maxAge 0", () => {
     expect(expiredCookieOptions().maxAge).toBe(0);
+  });
+});
+
+describe("callbackMatchesTransaction", () => {
+  const params = (query: string) => new URLSearchParams(query);
+
+  it("accepts exactly one matching state", () => {
+    expect(callbackMatchesTransaction(params("code=c&state=s"), transaction)).toBe(true);
+  });
+
+  it("rejects a stale or unsolicited callback, so the pending login survives", () => {
+    expect(callbackMatchesTransaction(params("code=c&state=other"), transaction)).toBe(false);
+    expect(callbackMatchesTransaction(params("code=c"), transaction)).toBe(false);
+    expect(callbackMatchesTransaction(params("code=c&state=s&state=s"), transaction)).toBe(false);
   });
 });

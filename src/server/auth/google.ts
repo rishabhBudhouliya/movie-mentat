@@ -1,8 +1,10 @@
 import * as oidc from "openid-client";
 import { getAuthEnv } from "@/server/env";
 
-// Google sign-in via OpenID Connect (decision 3): PKCE + state + nonce, and
-// openid-client verifies the ID token rather than just decoding it.
+// Google sign-in via OpenID Connect (decision 3): PKCE + state + nonce. The ID
+// token's claims (iss, aud, exp, nonce) are always validated; by default
+// openid-client trusts TLS for the signature, so non-repudiation checks are
+// enabled to verify it against Google's JWKS as well (Codex review).
 
 export const CALLBACK_PATH = "/api/auth/callback/google";
 
@@ -15,6 +17,8 @@ function getConfig(): Promise<oidc.Configuration> {
       new URL("https://accounts.google.com"),
       env.GOOGLE_CLIENT_ID,
       env.GOOGLE_CLIENT_SECRET,
+      undefined,
+      { execute: [oidc.enableNonRepudiationChecks] },
     )
     .catch((error: unknown) => {
       configPromise = undefined; // don't cache a failed discovery
