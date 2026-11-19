@@ -28,13 +28,14 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 | 1d | Isolation | READ COMMITTED (Postgres's default). Read the state row **after** `pg_advisory_xact_lock`. | From the TLA+ model: a snapshot taken before the lock would make the recheck stale. |
 | 1e | Guarantee boundaries | Waiters share only **committed** outcomes (S4′). Responses that hit `lock_timeout` are exempt and degrade to fallback or error. | TLA+ findings F2 and F3. A crashed or rolled-back holder commits nothing to share, and a longer `lock_timeout` would hold pooled connections longer. The `decided` config passes all invariants (9.3M states). |
 | 2 | "New fact" button | Skips the client cache and still respects the server's 60s window | From `PRODUCT_DECISIONS.md` |
-| 3 | Auth | **Arctic** (Google OAuth + PKCE) + our own session table | Auth.js is in maintenance mode and v5 is still beta. Better Auth is heavy (~17 direct deps, adapters it bundles). Arctic has 3 small deps and is fully explainable. The cost is that we own the session code, so it gets tests. |
+| 3 | Auth | **`openid-client`** (Google OIDC: PKCE, state, nonce, **verified ID token**) + our own session table | Auth.js is in maintenance mode and v5 is still beta. Better Auth is heavy (~17 direct deps). Arctic was chosen first, but it turned out to be deprecated by its maintainer (29 Jul 2026) along with its `@oslojs` deps. `openid-client` is OpenID-certified, has 2 deps (`jose`, `oauth4webapi`; same maintainer, 0 deps each), trusted publishing with provenance, and it verifies the ID token instead of only decoding it. We own the session code, so it gets tests. |
 | 4 | Sessions | Random token in an `httpOnly`/`secure`/`sameSite=lax` cookie. The DB stores only its **SHA-256 hash**. Fixed expiry, checked on every read. POST logout deletes the row. | A DB leak doesn't yield live sessions. Logout is real revocation. Pattern from Acadia's `Users.db`. |
 | 5 | Movie identity | TMDB ID + title + release year saved in Postgres | From `PRODUCT_DECISIONS.md`. Facts are keyed by catalog ID, so the two *Dune*s have separate histories. |
 | 6 | Formal verification | TLA+/PlusCal, checked with TLC (`spec/`) | Checks the design before the schema is fixed. Counterexamples become tests. tla-ts was rejected: v0.0.x, three weeks old, one maintainer. |
 | 7 | Database host | **Neon** Postgres, AWS us-east-1 (next to Vercel `iad1`). Pooled URL at runtime, direct URL for migrations. | Serverless-friendly pooling (PgBouncer, transaction mode), a `dev` branch separate from production, free tier, plain Postgres so no lock-in. **Accepted costs:** free-tier compute scales to zero, so the first request after idle is slow (warm it before review). The advisory-lock design holds a pooled connection for up to about 12s per generating request, which is fine at this traffic. |
 | 8 | TypeScript | **6.0.3** (not 7.x) | TS 7 is the native Go port. Next.js type-checks through TypeScript's JS API, and compatibility with Next 16.4 is unverified. A reliable build matters more than the newest compiler. |
 | 9 | Lint/format | **Biome** (not ESLint) | One package with zero dependencies (platform binaries only). Lints and formats, with React-hook and Next.js rules. ESLint plus `eslint-config-next` is about 40 direct deps. |
+| 10 | Schema | `Movie` (TMDB ID PK, title, year, poster); `User` (`googleSub` unique, optional name/avatar, `favoriteMovieId?`); `Session` (SHA-256 `tokenHash` PK, `expiresAt`); `Fact` indexed on `(userId, movieId, createdAt DESC)`; `FactGenState` (PK `(userId, movieId)`, `attemptNo`, `failedAttemptNo?`/`failedAt?` with CHECK constraints). **No stored `lastSuccessAt`**: it's derived from the newest `Fact`. | A `Movie` table gives foreign-key integrity and keeps the user's favorite viewable during a TMDB outage. Deriving freshness makes S5 (failure never advances freshness) true by construction. |
 
 ### Type-level design (Elm / Acadia patterns)
 
@@ -50,11 +51,9 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 
 | # | Question | Recommendation |
 |---|---|---|
-| P1 | Movie storage: columns on `User`, or a `Movie` table? | `Movie` table keyed by TMDB ID, referenced by `User.favoriteMovieId` and `Fact.movieId` (foreign-key integrity, no duplicate titles) |
 | P2 | Input length limits | Search query 1–200 chars after trimming (the longest real titles are near 200) |
 | P3 | Client cache (Variant B) | Hand-rolled reducer, no React Query (dependency budget, Elm architecture) |
 | P4 | How a tab learns of a save made in another tab (Variant B) | Refetch on focus; decide when we reach B |
-| P5 | Full schema | Next. TLA+ results are in (`spec/`), and 1b adds an `attemptNo` to the state row |
 
 ## Dependencies
 
@@ -64,10 +63,12 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 - **`--frozen-lockfile`** in CI and on Vercel. The lockfile changes only in a commit that adds a dependency.
 - **No unpinned `dlx`/`npx`.** That includes scaffolding.
 - **Agents never add a dependency.** Each one is proposed with its dependents count, transitive deps, license and maintainers, approved by the author, and committed on its own with the lockfile diff.
-- **Prisma pinned to 7.10.1.** Prisma's `latest` tag currently points to an 8.0 RC.
+- **Prisma pinned to 7.9.1.** Prisma's `latest` tag currently points to an 8.0 RC. The `prisma` CLI 7.10.x is published with a token and no provenance (prisma/orm#30850), so `trustPolicy` refuses it. 7.9.1 has provenance on every Prisma package, so the policy has no exceptions.
+- **Vetting checklist** for every dependency: dependents/downloads, transitive deps, license, maintainers, **deprecation status**, **trusted publishing + provenance**, and install scripts (read before deciding).
+- **Reviewed and blocked install scripts:** `prisma` preinstall (Node version check only) and `@prisma/engines` postinstall (schema-engine download; the CLI fetches it on first use instead, verified).
 
-Runtime: `next`, `react`, `prisma`/`@prisma/client` (7.10.1), `arctic`, `zod`, `openai`.
-Dev: `typescript` (6.0.3), `@biomejs/biome`, `tailwindcss`, `vitest`, `@vitest/coverage-v8`.
+Runtime: `next`, `react`, `@prisma/client` + `@prisma/adapter-pg` (7.9.1; `adapter-pg` because the same TCP driver works against local Docker Postgres in tests and Neon in production, and it supports the interactive transaction the advisory lock needs), `openid-client`, `zod`, `openai` (later).
+Dev: `prisma` (7.9.1), `typescript` (6.0.3), `@biomejs/biome`, `tailwindcss`, `vitest` and `@vitest/coverage-v8` (later).
 shadcn/ui is still to be decided. It copies component code into the repo and pulls in Radix and related packages.
 
 ## Delegation
@@ -92,7 +93,7 @@ shadcn/ui is still to be decided. It copies component code into the repo and pul
 | 1 | Scaffold, pnpm policy, CI, deploy | Deploy while the app is tiny |
 | 2 | Arctic auth, sessions, onboarding, dashboard | TLA+ runs in the background |
 | — | **Checkpoint 1:** base app deployed | |
-| 3 | Schema (P1, P5), TMDB search | Needs the TLA+ results |
+| 3 | Schema (decision 10), TMDB search | P2 needed for search input |
 | 4 | Variant A fact service + tests | |
 | — | **Checkpoint 2:** A passes its gate and is deployed. **This is a complete submission.** | |
 | 5 | Variant B | Only after Checkpoint 2 |

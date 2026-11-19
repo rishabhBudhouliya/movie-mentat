@@ -12,3 +12,11 @@ saveExact: true
 # Pnpm defaults, written out so the policy is visible in one place.
 strictDepBuilds: true
 blockExoticSubdeps: true
+
+# Reviewed install scripts that we deliberately do NOT run:
+# - prisma: preinstall is only a Node version check.
+# - @prisma/engines: postinstall downloads the schema engine; the CLI fetches it
+#   on first use instead (verified with `prisma migrate` before relying on it).
+ignoredBuiltDependencies:
+  - prisma
+  - "@prisma/engines"
