@@ -36,6 +36,7 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 | 8 | TypeScript | **6.0.3** (not 7.x) | TS 7 is the native Go port. Next.js type-checks through TypeScript's JS API, and compatibility with Next 16.4 is unverified. A reliable build matters more than the newest compiler. |
 | 9 | Lint/format | **Biome** (not ESLint) | One package with zero dependencies (platform binaries only). Lints and formats, with React-hook and Next.js rules. ESLint plus `eslint-config-next` is about 40 direct deps. |
 | 10 | Schema | `Movie` (TMDB ID PK, title, year, poster); `User` (`googleSub` unique, optional name/avatar, `favoriteMovieId?`); `Session` (SHA-256 `tokenHash` PK, `expiresAt`); `Fact` indexed on `(userId, movieId, createdAt DESC)`; `FactGenState` (PK `(userId, movieId)`, `attemptNo`, `failedAttemptNo?`/`failedAt?` with CHECK constraints). **No stored `lastSuccessAt`**: it's derived from the newest `Fact`. | A `Movie` table gives foreign-key integrity and keeps the user's favorite viewable during a TMDB outage. Deriving freshness makes S5 (failure never advances freshness) true by construction. |
+| 11 | Movie input and search | Query is 1–200 chars after trimming, validated on the server (`parseMovieQuery`, shared with the browser). A trailing year ("Dune 1984") searches title + year *and* the full text, since "Wonder Woman 1984" is a title. Enter: one exact title (and year) match saves directly; several exact matches show the two best as cards; otherwise pick from the list. Saving sends only `tmdbId`; the server re-fetches it from TMDB. | Verified against live TMDB: partial titles work ("Lord of the Rin"); **no typo tolerance** ("Duen" doesn't find Dune), so the app doesn't claim fuzzy search; 55–140 ms latency, so a 250 ms debounce. Re-fetching on save means a forged ID can't store made-up titles. |
 
 ### Type-level design (Elm / Acadia patterns)
 
@@ -51,7 +52,6 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 
 | # | Question | Recommendation |
 |---|---|---|
-| P2 | Input length limits | Search query 1–200 chars after trimming (the longest real titles are near 200) |
 | P3 | Client cache (Variant B) | Hand-rolled reducer, no React Query (dependency budget, Elm architecture) |
 | P4 | How a tab learns of a save made in another tab (Variant B) | Refetch on focus; decide when we reach B |
 

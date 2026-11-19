@@ -38,3 +38,12 @@ export function getAuthEnv(): AuthEnv {
 export function isSecureOrigin(appUrl: string): boolean {
   return new URL(appUrl).protocol === "https:";
 }
+
+const tmdbSchema = z.object({ TMDB_READ_TOKEN: z.string().min(1) });
+
+let tmdbEnv: z.infer<typeof tmdbSchema> | undefined;
+
+export function getTmdbEnv(): z.infer<typeof tmdbSchema> {
+  tmdbEnv ??= tmdbSchema.parse(process.env);
+  return tmdbEnv;
+}
