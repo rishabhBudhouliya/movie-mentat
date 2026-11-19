@@ -1,0 +1,14 @@
+# Supply-chain policy (PLAN.md, "Dependencies").
+
+# Refuse versions published less than 72 hours ago (in minutes).
+minimumReleaseAge: 4320
+
+# Fail if a package's publishing trust level drops (e.g. trusted publishing -> token).
+trustPolicy: no-downgrade
+
+# Exact versions, no ^ or ~.
+saveExact: true
+
+# Pnpm defaults, written out so the policy is visible in one place.
+strictDepBuilds: true
+blockExoticSubdeps: true
