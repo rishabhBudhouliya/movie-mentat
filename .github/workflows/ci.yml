@@ -16,6 +16,19 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        # Same digest as compose.yaml (Postgres 18, matching Neon).
+        image: postgres@sha256:ff64c9e3bdf8e2120107d3559de8db314e8305f7e38c5105903c6295876738ff
+        env:
+          POSTGRES_USER: mentat
+          POSTGRES_PASSWORD: mentat
+          POSTGRES_DB: movie_mentat_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U mentat -d movie_mentat_test"
+          --health-interval 2s --health-timeout 2s --health-retries 15
     steps:
       # Actions pinned to commit SHAs (supply-chain policy, PLAN.md).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -27,4 +40,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
+      # Real Postgres, coverage gate on core modules (vitest.config.ts).
+      - run: pnpm test:coverage
       - run: pnpm build
