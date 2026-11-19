@@ -4,6 +4,7 @@ import { FavoriteMovieCard } from "@/components/favorite-movie-card";
 import { ProfileCard } from "@/components/profile-card";
 import { requireUser } from "@/server/auth/current-user";
 import { getFavoriteMovie } from "@/server/movies/repository";
+import { DashboardFact } from "./dashboard-fact";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -20,6 +21,7 @@ export default async function DashboardPage() {
           logoutAction="/api/auth/logout"
         />
         <FavoriteMovieCard movie={movie} />
+        <DashboardFact />
       </div>
     </AppShell>
   );

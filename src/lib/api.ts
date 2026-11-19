@@ -67,6 +67,19 @@ async function request<T>(
       };
 }
 
+const factSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  generatedAt: z.string(),
+  ageSeconds: z.number(),
+});
+
+export const factResponseSchema = z.discriminatedUnion("source", [
+  z.object({ source: z.enum(["fresh", "cached"]), fact: factSchema }),
+  z.object({ source: z.literal("fallback"), fact: factSchema, notice: z.string() }),
+]);
+export type FactResponse = z.infer<typeof factResponseSchema>;
+
 export const api = {
   searchMovies: (query: string, signal?: AbortSignal) =>
     request(
@@ -74,6 +87,8 @@ export const api = {
       z.object({ movies: z.array(movieSummarySchema) }),
       { signal },
     ),
+
+  getFact: () => request("/api/fact", factResponseSchema),
 
   setFavoriteMovie: (tmdbId: number) =>
     request("/api/me/movie", z.object({ movie: movieSummarySchema }), {

@@ -47,3 +47,15 @@ export function getTmdbEnv(): z.infer<typeof tmdbSchema> {
   tmdbEnv ??= tmdbSchema.parse(process.env);
   return tmdbEnv;
 }
+
+const openAiSchema = z.object({
+  OPENAI_API_KEY: z.string().min(1),
+  OPENAI_MODEL: z.string().min(1).default("gpt-4.1-mini"),
+});
+
+let openAiEnv: z.infer<typeof openAiSchema> | undefined;
+
+export function getOpenAiEnv(): z.infer<typeof openAiSchema> {
+  openAiEnv ??= openAiSchema.parse(process.env);
+  return openAiEnv;
+}
