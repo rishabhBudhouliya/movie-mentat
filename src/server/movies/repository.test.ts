@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { UserId } from "@/lib/brand";
 import { createSession, getSessionUser } from "@/server/auth/session";
-import { db } from "@/server/db";
+import { getDb } from "@/server/db";
 import { resetDb } from "../../../test/reset-db";
 import { getFavoriteMovie, posterUrl } from "./repository";
+
+const db = getDb();
 
 async function signedInUser(favoriteMovieId: number | null) {
   const row = await db.user.create({

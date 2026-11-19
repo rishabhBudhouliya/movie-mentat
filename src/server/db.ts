@@ -1,16 +1,16 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
-function createClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error("DATABASE_URL is not set");
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
-}
-
-// Reuse one client across hot reloads in development; each reload would
-// otherwise open a new connection pool.
+// Created on first use, not on import: `next build` imports every route to
+// collect page data, and CI builds without a database.
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const db = globalForPrisma.prisma ?? createClient();
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+export function getDb(): PrismaClient {
+  if (globalForPrisma.prisma) return globalForPrisma.prisma;
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("DATABASE_URL is not set");
+  const client = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  // Cache on globalThis so dev hot reloads reuse one connection pool.
+  globalForPrisma.prisma = client;
+  return client;
+}

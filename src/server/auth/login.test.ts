@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { db } from "@/server/db";
+import { getDb } from "@/server/db";
 import { resetDb } from "../../../test/reset-db";
 import { completeLogin, parseGoogleClaims } from "./login";
 import { getSessionUser } from "./session";
+
+const db = getDb();
 
 const claims = {
   sub: "google-123",

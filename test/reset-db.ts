@@ -1,4 +1,6 @@
-import { db } from "@/server/db";
+import { getDb } from "@/server/db";
+
+const db = getDb();
 
 /** Empties every table between tests. */
 export async function resetDb(): Promise<void> {

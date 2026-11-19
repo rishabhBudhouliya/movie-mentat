@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { UserId } from "@/lib/brand";
-import { db } from "@/server/db";
+import { getDb } from "@/server/db";
 import { resetDb } from "../../../test/reset-db";
 import { createSession, deleteSession, getSessionUser, hashToken, SESSION_TTL_MS } from "./session";
+
+const db = getDb();
 
 async function makeUser(sub = "google-sub-1"): Promise<UserId> {
   const user = await db.user.create({ data: { googleSub: sub, email: `${sub}@example.com` } });

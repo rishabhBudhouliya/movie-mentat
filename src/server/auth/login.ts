@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { UserId } from "@/lib/brand";
-import { db } from "@/server/db";
+import { getDb } from "@/server/db";
 import { createSession } from "./session";
 
 // Claims from Google's ID token, which openid-client has already verified
@@ -38,7 +38,7 @@ export async function completeLogin(claims: unknown, now: Date = new Date()): Pr
     name: identity.name ?? null,
     avatarUrl: identity.picture ?? null,
   };
-  const user = await db.user.upsert({
+  const user = await getDb().user.upsert({
     where: { googleSub: identity.sub },
     create: { googleSub: identity.sub, ...profile },
     update: profile,

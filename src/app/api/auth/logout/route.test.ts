@@ -2,9 +2,11 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { UserId } from "@/lib/brand";
 import { createSession, getSessionUser } from "@/server/auth/session";
-import { db } from "@/server/db";
+import { getDb } from "@/server/db";
 import { resetDb } from "../../../../../test/reset-db";
 import { POST } from "./route";
+
+const db = getDb();
 
 async function sessionToken(): Promise<string> {
   const user = await db.user.create({ data: { googleSub: "s", email: "u@example.com" } });

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import type { TmdbId, UserId } from "@/lib/brand";
-import { db } from "@/server/db";
+import { getDb } from "@/server/db";
 
 // Decision 4 (PLAN.md): the cookie holds a random token; the DB stores only
 // its SHA-256 hash. Sessions have a fixed lifetime, checked on every read.
@@ -46,7 +46,7 @@ export async function createSession(
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
-  await db.session.create({
+  await getDb().session.create({
     data: { tokenHash: hashToken(token), userId, createdAt: now, expiresAt },
   });
   return { token, expiresAt };
@@ -58,15 +58,18 @@ export async function getSessionUser(
   now: Date = new Date(),
 ): Promise<AuthedUser | null> {
   const tokenHash = hashToken(token);
-  const session = await db.session.findUnique({ where: { tokenHash }, include: { user: true } });
+  const session = await getDb().session.findUnique({
+    where: { tokenHash },
+    include: { user: true },
+  });
   if (!session) return null;
   if (session.expiresAt <= now) {
-    await db.session.deleteMany({ where: { tokenHash } });
+    await getDb().session.deleteMany({ where: { tokenHash } });
     return null;
   }
   return toAuthedUser(session.user);
 }
 
 export async function deleteSession(token: string): Promise<void> {
-  await db.session.deleteMany({ where: { tokenHash: hashToken(token) } });
+  await getDb().session.deleteMany({ where: { tokenHash: hashToken(token) } });
 }
