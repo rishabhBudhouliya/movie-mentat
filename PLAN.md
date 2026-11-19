@@ -23,13 +23,18 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 |---|---|---|---|
 | 1 | Concurrency guard | Postgres `pg_advisory_xact_lock` per (user, movie); recheck freshness after acquiring it | Works across serverless instances. Transaction-scoped, so it's safe behind Neon's transaction-mode pooler, where session-level advisory locks are not. |
 | 1a | Clock | Every timestamp comes from Postgres `clock_timestamp()` | `now()` is the transaction *start* time, so it's stale after a lock wait. App-server clocks drift across instances. One clock is also what the TLA+ model assumes. |
-| 1b | Waiter vs. retry | Each request records `startedAt` (DB clock). A waiter shares a failure iff `failedAt > startedAt`. | Requests that waited during a failed attempt get that attempt's outcome. A request that arrives after the failure starts a new attempt immediately. |
+| 1b | Waiter vs. retry | Per-(user, movie) **`attemptNo` counter**. A request reads the committed `attemptNo` before waiting for the lock. After locking, it shares a failure only if one was recorded with a higher number. | Requests that waited during a failed attempt get that attempt's outcome. A request that arrives after the failure starts a new attempt immediately. TLA+ finding F1: the original `failedAt > startedAt` timestamp rule fails on a clock tie; a counter can't tie. |
 | 1c | Timeout budget | OpenAI 8s; transaction timeout about 12s; Postgres `lock_timeout` set | Prisma's defaults (5s timeout, 2s maxWait) are shorter than the OpenAI call. `lock_timeout` guarantees every request terminates. |
+| 1d | Isolation | READ COMMITTED (Postgres's default). Read the state row **after** `pg_advisory_xact_lock`. | From the TLA+ model: a snapshot taken before the lock would make the recheck stale. |
+| 1e | Guarantee boundaries | Waiters share only **committed** outcomes (S4′). Responses that hit `lock_timeout` are exempt and degrade to fallback or error. | TLA+ findings F2 and F3. A crashed or rolled-back holder commits nothing to share, and a longer `lock_timeout` would hold pooled connections longer. The `decided` config passes all invariants (9.3M states). |
 | 2 | "New fact" button | Skips the client cache and still respects the server's 60s window | From `PRODUCT_DECISIONS.md` |
 | 3 | Auth | **Arctic** (Google OAuth + PKCE) + our own session table | Auth.js is in maintenance mode and v5 is still beta. Better Auth is heavy (~17 direct deps, adapters it bundles). Arctic has 3 small deps and is fully explainable. The cost is that we own the session code, so it gets tests. |
 | 4 | Sessions | Random token in an `httpOnly`/`secure`/`sameSite=lax` cookie. The DB stores only its **SHA-256 hash**. Fixed expiry, checked on every read. POST logout deletes the row. | A DB leak doesn't yield live sessions. Logout is real revocation. Pattern from Acadia's `Users.db`. |
 | 5 | Movie identity | TMDB ID + title + release year saved in Postgres | From `PRODUCT_DECISIONS.md`. Facts are keyed by catalog ID, so the two *Dune*s have separate histories. |
 | 6 | Formal verification | TLA+/PlusCal, checked with TLC (`spec/`) | Checks the design before the schema is fixed. Counterexamples become tests. tla-ts was rejected: v0.0.x, three weeks old, one maintainer. |
+| 7 | Database host | **Neon** Postgres, AWS us-east-1 (next to Vercel `iad1`). Pooled URL at runtime, direct URL for migrations. | Serverless-friendly pooling (PgBouncer, transaction mode), a `dev` branch separate from production, free tier, plain Postgres so no lock-in. **Accepted costs:** free-tier compute scales to zero, so the first request after idle is slow (warm it before review). The advisory-lock design holds a pooled connection for up to about 12s per generating request, which is fine at this traffic. |
+| 8 | TypeScript | **6.0.3** (not 7.x) | TS 7 is the native Go port. Next.js type-checks through TypeScript's JS API, and compatibility with Next 16.4 is unverified. A reliable build matters more than the newest compiler. |
+| 9 | Lint/format | **Biome** (not ESLint) | One package with zero dependencies (platform binaries only). Lints and formats, with React-hook and Next.js rules. ESLint plus `eslint-config-next` is about 40 direct deps. |
 
 ### Type-level design (Elm / Acadia patterns)
 
@@ -49,11 +54,11 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 | P2 | Input length limits | Search query 1–200 chars after trimming (the longest real titles are near 200) |
 | P3 | Client cache (Variant B) | Hand-rolled reducer, no React Query (dependency budget, Elm architecture) |
 | P4 | How a tab learns of a save made in another tab (Variant B) | Refetch on focus; decide when we reach B |
-| P5 | Full schema | After the TLA+ results are in |
+| P5 | Full schema | Next. TLA+ results are in (`spec/`), and 1b adds an `attemptNo` to the state row |
 
 ## Dependencies
 
-- **pnpm 12** via corepack, pinned in `packageManager` with its hash.
+- **pnpm 10.34.9** via corepack, pinned in `packageManager` with its hash. pnpm 12 ships a native binary that corepack 0.33 can't launch, and Vercel picks pnpm 9/10 for a v9 lockfile unless experimental corepack is on. 10.x has the same supply-chain controls.
 - **Exact versions** only, with a **72-hour release-age cooldown**.
 - **Install scripts denied by default**, with an explicit allowlist.
 - **`--frozen-lockfile`** in CI and on Vercel. The lockfile changes only in a commit that adds a dependency.
@@ -62,8 +67,14 @@ AI makes code cheap. It doesn't make design judgment, verification, setup time, 
 - **Prisma pinned to 7.10.1.** Prisma's `latest` tag currently points to an 8.0 RC.
 
 Runtime: `next`, `react`, `prisma`/`@prisma/client` (7.10.1), `arctic`, `zod`, `openai`.
-Dev: `typescript`, `tailwindcss`, `vitest`, `@vitest/coverage-v8`.
+Dev: `typescript` (6.0.3), `@biomejs/biome`, `tailwindcss`, `vitest`, `@vitest/coverage-v8`.
 shadcn/ui is still to be decided. It copies component code into the repo and pulls in Radix and related packages.
+
+## Delegation
+
+- **Sonnet subagents** take bounded tasks that don't need decisions, each in its own git worktree with a written brief: no installs, no `npx`/`dlx`, named files only. Claude reviews every diff before the author commits.
+- **Codex** independently reviews security- and correctness-critical code (sessions, fact service, TLA+ spec) before each checkpoint. A different model family catches different mistakes.
+- **Claude keeps:** sessions, schema, the fact service, and every design decision.
 
 ## Testing
 

@@ -1,0 +1,3 @@
+== counter-noabort: no error
+   2,839,528 states generated, 2,095,192 distinct
+   PASS

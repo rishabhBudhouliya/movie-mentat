@@ -1,0 +1,11 @@
+== mut-g-boundary: Invariant S3 is violated.
+   63966 states generated, 42275 distinct
+   1 Initial predicate: sess=(r1 :> <<u1, m1>> @@ r2 :> <<u1, m1>> @@ r3 :> <<u1, m1>>)
+   2 Begin: pc=(r1 :> "Lock" @@ r2 :> "Begin" @@ r3 :> "Begin" @@ "clock" :> "Tick"); startedAt=(r1 :> 0 @@ r2 :> -1 @@ r3 :> -1)
+   3 Lock: pc=(r1 :> "Recheck" @@ r2 :> "Begin" @@ r3 :> "Begin" @@ "clock" :> "Tick"); lockHolder=( <<u1, m1>> :> r1 @@ <<u1, m2>> :> "-" @@ <<u2, m1>> :> "-" @@ <<u2, m2>> :> "-" )
+   4 Recheck: pc=(r1 :> "Gen" @@ r2 :> "Begin" @@ r3 :> "Begin" @@ "clock" :> "Tick"); decided=(r1 :> "gen" @@ r2 :> "none" @@ r3 :> "none")
+   5 Gen: outcome=(r1 :> "success" @@ r2 :> "none" @@ r3 :> "none"); resp=( r1 :> [ kind |-> "fresh", fact |-> [k |-> <<u1, m1>>, at |-> 0, trueAt |-> 0, by |-> r1] ] @@ r2 :> [ kind |-> "none", fact |-> NoFact ] @@ r3 :> [ kind |-> "none", fact |-> NoFact ] ); pc=(r1 :> "Done" @@ r2 :> "Begin" @@ r3 :> "Begin" @@ "clock" :> "Tick"); lastSuccessAt=(<<u1, m1>> :> 0 @@ <<u1, m2>> :> -1 @@ <<u2, m1>> :> -1 @@ <<u2, m2>> :> -1); lockHolder=( <<u1, m1>> :> "-" @@ <<u1, m2>> :> "-" @@ <<u2, m1>> :> "-" @@ <<u2, m2>> :> "-" )
+   6 Tick: clock=1
+   7 Tick: clock=2
+   8 Tick: clock=3
+   9 Begin: resp=( r1 :> [ kind |-> "fresh", fact |-> [k |-> <<u1, m1>>, at |-> 0, trueAt |-> 0, by |-> r1] ] @@ r2 :> [ kind |-> "cached", fact |-> [k |-> <<u1, m1>>, at |-> 0, trueAt |-> 0, by |-> r1] ] @@ r3 :> [ kind |-> "none", fact |-> NoFact ] ); pc=(r1 :> "Done" @@ r2 :> "Done" @@ r3 :> "Begin" @@ "clock" :> "Tick"); decided=(r1 :> "gen" @@ r2 :> "cached" @@ r3 :> "none"); startedAt=(r1 :> 0 @@ r2 :> 3 @@ r3 :> -1); cacheAge=(r1 :> -1 @@ r2 :> 3 @@ r3 :> -1) 63966 states generated, 42275 distinct states found, 20057 states left on queue. The depth of the complete state graph search is 9. The average outdegree of the complete state graph is 2 (minimum is 0, the maximum 6 and the 95th percentile is 4). Finished in 01s at (2026-11-19 16:36:02)

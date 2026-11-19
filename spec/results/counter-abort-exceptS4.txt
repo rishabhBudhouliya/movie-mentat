@@ -1,0 +1,3 @@
+== counter-abort-exceptS4: no error
+   13,542,952 states generated, 9,333,400 distinct
+   PASS

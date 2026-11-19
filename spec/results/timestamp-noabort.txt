@@ -1,0 +1,10 @@
+== timestamp-noabort: Invariant S4 is violated.
+   34683 states generated, 22739 distinct
+   1 Initial predicate: sess=(r1 :> <<u1, m1>> @@ r2 :> <<u1, m1>> @@ r3 :> <<u2, m2>>)
+   2 Begin: pc=(r1 :> "Lock" @@ r2 :> "Begin" @@ r3 :> "Begin" @@ "clock" :> "Tick"); startedAt=(r1 :> 0 @@ r2 :> -1 @@ r3 :> -1)
+   3 Lock: pc=(r1 :> "Recheck" @@ r2 :> "Begin" @@ r3 :> "Begin" @@ "clock" :> "Tick"); lockHolder=( <<u1, m1>> :> r1 @@ <<u1, m2>> :> "-" @@ <<u2, m1>> :> "-" @@ <<u2, m2>> :> "-" )
+   4 Begin: pc=(r1 :> "Recheck" @@ r2 :> "Lock" @@ r3 :> "Begin" @@ "clock" :> "Tick"); startedAt=(r1 :> 0 @@ r2 :> 0 @@ r3 :> -1)
+   5 Recheck: pc=(r1 :> "Gen" @@ r2 :> "Lock" @@ r3 :> "Begin" @@ "clock" :> "Tick"); overlapped=(r1 :> {} @@ r2 :> {r1} @@ r3 :> {}); decided=(r1 :> "gen" @@ r2 :> "none" @@ r3 :> "none")
+   6 Gen: failSince=(r1 :> FALSE @@ r2 :> TRUE @@ r3 :> FALSE); outcome=(r1 :> "failure" @@ r2 :> "none" @@ r3 :> "none"); resp=( r1 :> [ kind |-> "error", fact |-> NoFact ] @@ r2 :> [ kind |-> "none", fact |-> NoFact ] @@ r3 :> [ kind |-> "none", fact |-> NoFact ] ); pc=(r1 :> "Done" @@ r2 :> "Lock" @@ r3 :> "Begin" @@ "clock" :> "Tick"); lockHolder=( <<u1, m1>> :> "-" @@ <<u1, m2>> :> "-" @@ <<u2, m1>> :> "-" @@ <<u2, m2>> :> "-" ); failedAt=(<<u1, m1>> :> 0 @@ <<u1, m2>> :> -1 @@ <<u2, m1>> :> -1 @@ <<u2, m2>> :> -1)
+   7 Lock: pc=(r1 :> "Done" @@ r2 :> "Recheck" @@ r3 :> "Begin" @@ "clock" :> "Tick"); lockHolder=( <<u1, m1>> :> r2 @@ <<u1, m2>> :> "-" @@ <<u2, m1>> :> "-" @@ <<u2, m2>> :> "-" )
+   8 Recheck: pc=(r1 :> "Done" @@ r2 :> "Gen" @@ r3 :> "Begin" @@ "clock" :> "Tick"); decided=(r1 :> "gen" @@ r2 :> "gen" @@ r3 :> "none"); cacheAge=(r1 :> -1 @@ r2 :> -1 @@ r3 :> -1) 34683 states generated, 22739 distinct states found, 11408 states left on queue. The depth of the complete state graph search is 8. The average outdegree of the complete state graph is 2 (minimum is 0, the maximum 6 and the 95th percentile is 4). Finished in 02s at (2026-11-19 16:37:50)

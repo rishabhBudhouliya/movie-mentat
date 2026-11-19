@@ -1,0 +1,3 @@
+== timestamp-noabort-exceptS4: no error
+   3,140,860 states generated, 2,333,380 distinct
+   PASS

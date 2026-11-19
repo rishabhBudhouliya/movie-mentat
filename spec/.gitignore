@@ -1,0 +1,4 @@
+tools/
+states/
+*.old
+*_TTrace_*

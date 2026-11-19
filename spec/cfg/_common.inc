@@ -1,0 +1,7 @@
+  Users = {u1, u2}
+  Movies = {m1, m2}
+  Requests = {r1, r2, r3}
+  W = 3
+  GenTimeout = 1
+  LockTimeout = 2
+  MaxTime = 5
