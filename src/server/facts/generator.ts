@@ -16,7 +16,11 @@ export type GenerateResult =
   | { kind: "timeout" }
   | { kind: "error" };
 
-export type FactGenerator = (prompt: FactPrompt) => Promise<GenerateResult>;
+/**
+ * `signal` lets the caller cut the call short (the service's transaction
+ * deadline); the generator also applies its own 8s timeout.
+ */
+export type FactGenerator = (prompt: FactPrompt, signal?: AbortSignal) => Promise<GenerateResult>;
 
 const SYSTEM_PROMPT = `You share one fun, true fact about a film with someone who may not have seen it yet.
 Never spoil it: nothing about events after the opening setup, endings, twists, reveals, or character fates, and no production anecdotes that hint at them.
@@ -48,11 +52,17 @@ const completionSchema = z.object({
   choices: z
     .array(
       z.object({
+        // "length" or "content_filter" mean the answer may be cut off: not a fact.
+        finish_reason: z.string().nullish(),
         message: z.object({ content: z.string().nullable(), refusal: z.string().nullish() }),
       }),
     )
     .min(1),
 });
+
+function isTimeout(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "TimeoutError";
+}
 
 export function buildUserPrompt({ title, releaseYear, previousFact }: FactPrompt): string {
   const film = releaseYear ? `${title} (${releaseYear})` : title;
@@ -62,11 +72,13 @@ export function buildUserPrompt({ title, releaseYear, previousFact }: FactPrompt
   return `Film: ${film}\n${previous}`;
 }
 
-export const generateWithOpenAI: FactGenerator = async (prompt) => {
-  const { OPENAI_API_KEY, OPENAI_MODEL } = getOpenAiEnv();
-  let response: Response;
+export const generateWithOpenAI: FactGenerator = async (prompt, signal) => {
   try {
-    response = await fetch("https://api.openai.com/v1/chat/completions", {
+    // Inside the try: a configuration error is an ordinary failure, recorded
+    // and shared like any other, not an exception that rolls back the attempt.
+    const { OPENAI_API_KEY, OPENAI_MODEL } = getOpenAiEnv();
+    const timeout = AbortSignal.timeout(OPENAI_TIMEOUT_MS);
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -77,27 +89,19 @@ export const generateWithOpenAI: FactGenerator = async (prompt) => {
         ],
         response_format: { type: "json_schema", json_schema: JSON_SCHEMA },
       }),
-      signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
+      signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
     });
-  } catch (error) {
-    return error instanceof DOMException && error.name === "TimeoutError"
-      ? { kind: "timeout" }
-      : { kind: "error" };
-  }
-  if (!response.ok) return { kind: "error" };
+    if (!response.ok) return { kind: "error" };
 
-  try {
     const completion = completionSchema.parse(await response.json());
-    const message = completion.choices[0]?.message;
-    if (!message?.content || message.refusal) return { kind: "abstained" };
-    const answer = responseSchema.parse(JSON.parse(message.content));
+    const choice = completion.choices[0];
+    if (choice?.finish_reason !== "stop") return { kind: "error" };
+    if (!choice.message.content || choice.message.refusal) return { kind: "abstained" };
+    const answer = responseSchema.parse(JSON.parse(choice.message.content));
     const text = answer.fact.trim();
     if (answer.status === "abstain" || text.length === 0) return { kind: "abstained" };
     return { kind: "fact", text };
   } catch (error) {
-    // Body read can also hit the timeout.
-    return error instanceof DOMException && error.name === "TimeoutError"
-      ? { kind: "timeout" }
-      : { kind: "error" };
+    return isTimeout(error) ? { kind: "timeout" } : { kind: "error" };
   }
 };

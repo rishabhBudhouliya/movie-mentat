@@ -87,7 +87,7 @@ describe("getFact: 60-second cache window", () => {
     const generate = stubGenerator(ok());
 
     expect(await getFact(user, generate)).toMatchObject({ kind: "fresh" });
-    expect(generate).toHaveBeenCalledWith({
+    expect(generate.mock.calls[0]?.[0]).toEqual({
       title: "Dune",
       releaseYear: 2021,
       previousFact: "seeded fact", // asks for a different detail
@@ -213,6 +213,27 @@ describe("getFact: burst protection (advisory lock)", () => {
     expect(await holder).toEqual({ kind: "unavailable", cause: "timeout" });
     const next = await getFact(user, stubGenerator(ok()), options);
     expect(next).toMatchObject({ kind: "fresh" });
+  });
+});
+
+describe("getFact: transaction deadline (Codex review)", () => {
+  beforeEach(resetDb);
+
+  it("S2 under expiry: the OpenAI call is aborted before the transaction can expire", async () => {
+    const user = await userWithFavorite("a");
+    let seenSignal: AbortSignal | undefined;
+    const hung = vi.fn<FactGenerator>((_prompt, signal) => {
+      seenSignal = signal;
+      return new Promise<GenerateResult>(() => {});
+    });
+
+    // 3s transaction, 2s reserved for the commit: the call gets about 1s, not 10s.
+    const started = Date.now();
+    const outcome = await getFact(user, hung, { txTimeoutMs: 3_000, genTimeoutMs: 10_000 });
+
+    expect(outcome).toEqual({ kind: "unavailable", cause: "timeout" }); // committed, not rolled back
+    expect(seenSignal?.aborted).toBe(true); // the fetch is cancelled, not left running
+    expect(Date.now() - started).toBeLessThan(3_000);
   });
 });
 

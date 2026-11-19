@@ -13,9 +13,10 @@ function toDto(fact: SavedFact) {
   };
 }
 
-// Worst case: 10s lock wait + 8s OpenAI deadline (PLAN.md 1c). Explicit so a
-// platform default can't cut a request off mid-transaction.
-export const maxDuration = 30;
+// Worst case: pool wait (5s) + transaction (20s: lock wait plus OpenAI) +
+// reads around it (PLAN.md 1c), with headroom, so the platform never cuts a
+// request off mid-transaction.
+export const maxDuration = 60;
 
 const FALLBACK_NOTICE = "Couldn't get a new fact right now, so here's your most recent one.";
 
@@ -25,7 +26,13 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
 
-  const outcome = await getFact(user);
+  let outcome: Awaited<ReturnType<typeof getFact>>;
+  try {
+    outcome = await getFact(user);
+  } catch {
+    // The database itself failed before anything could be read.
+    return jsonError(503, "fact_unavailable", "Couldn't load your fact right now. Try again.");
+  }
   switch (outcome.kind) {
     case "fresh":
     case "cached":

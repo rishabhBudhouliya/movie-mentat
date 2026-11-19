@@ -3,10 +3,11 @@ import { buildUserPrompt, generateWithOpenAI } from "./generator";
 
 const prompt = { title: "Dune", releaseYear: 1984, previousFact: null };
 
-function completion(content: string | null, refusal: string | null = null) {
-  return new Response(JSON.stringify({ choices: [{ message: { content, refusal } }] }), {
-    status: 200,
-  });
+function completion(content: string | null, refusal: string | null = null, finishReason = "stop") {
+  return new Response(
+    JSON.stringify({ choices: [{ finish_reason: finishReason, message: { content, refusal } }] }),
+    { status: 200 },
+  );
 }
 
 describe("generateWithOpenAI (never throws)", () => {
@@ -56,6 +57,50 @@ describe("generateWithOpenAI (never throws)", () => {
 
     fetchMock.mockResolvedValueOnce(completion("not json"));
     expect(await generateWithOpenAI(prompt)).toEqual({ kind: "error" });
+  });
+});
+
+describe("generateWithOpenAI (Codex review)", () => {
+  const fetchMock = vi.fn<typeof fetch>();
+  beforeEach(() => vi.stubGlobal("fetch", fetchMock));
+  afterEach(() => {
+    fetchMock.mockReset();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("returns an error instead of throwing when OpenAI isn't configured", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.resetModules(); // env is parsed once per module instance
+    const fresh = await import("./generator");
+
+    expect(await fresh.generateWithOpenAI(prompt)).toEqual({ kind: "error" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an answer that was cut off at the token limit", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    fetchMock.mockResolvedValue(
+      completion(JSON.stringify({ status: "fact", fact: "Half a" }), null, "length"),
+    );
+
+    expect(await generateWithOpenAI(prompt)).toEqual({ kind: "error" });
+  });
+
+  it("stops when the caller's signal aborts", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    fetchMock.mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+    const controller = new AbortController();
+
+    const pending = generateWithOpenAI(prompt, controller.signal);
+    controller.abort(new DOMException("deadline", "TimeoutError"));
+
+    expect(await pending).toEqual({ kind: "timeout" });
   });
 });
 

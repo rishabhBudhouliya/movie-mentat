@@ -24,6 +24,10 @@ const DEFAULTS = {
   // settles would otherwise hold the lock and the transaction forever (L1).
   genTimeoutMs: OPENAI_TIMEOUT_MS,
 };
+// Time kept back at the end of the transaction for writing the outcome, so the
+// OpenAI call always ends before the transaction can expire (Codex review):
+// expiry releases the lock, and a still-running call would break S2.
+const COMMIT_RESERVE_MS = 2_000;
 export type FactServiceOptions = Partial<typeof DEFAULTS>;
 
 export type SavedFact = { id: FactId; text: string; createdAt: Date; ageSeconds: number };
@@ -76,6 +80,38 @@ export async function latestFact(
     : null;
 }
 
+/**
+ * Begin (one atomic step in the model): the latest fact and the committed
+ * attempt counter, read in a single statement so they come from one READ
+ * COMMITTED snapshot. Two separate reads could straddle another request's
+ * commit and mislabel a failure we waited on as one we'd already seen.
+ */
+async function readBegin(db: Db, userId: string, movieId: number) {
+  const rows = await db.$queryRaw<(Partial<FactRow> & { seen_attempt_no: number })[]>`
+    SELECT f.id::text, f.text, f.created_at,
+           EXTRACT(EPOCH FROM clock_timestamp() - f.created_at)::float8 AS age_seconds,
+           COALESCE((SELECT attempt_no FROM fact_gen_states
+                     WHERE user_id = ${userId}::uuid AND movie_id = ${movieId}), 0) AS seen_attempt_no
+    FROM (SELECT 1) AS one
+    LEFT JOIN LATERAL (
+      SELECT id, text, created_at FROM facts
+      WHERE user_id = ${userId}::uuid AND movie_id = ${movieId}
+      ORDER BY created_at DESC
+      LIMIT 1
+    ) AS f ON true`;
+  const row = rows[0];
+  const latest: SavedFact | null =
+    row?.id && row.text !== undefined && row.created_at && row.age_seconds !== undefined
+      ? {
+          id: row.id as FactId,
+          text: row.text,
+          createdAt: row.created_at,
+          ageSeconds: row.age_seconds,
+        }
+      : null;
+  return { latest, seenAttemptNo: row?.seen_attempt_no ?? 0 };
+}
+
 async function readFailedAttempt(db: Db, userId: string, movieId: number) {
   const rows = await db.$queryRaw<{ attempt_no: number; failed_attempt_no: number | null }[]>`
     SELECT attempt_no, failed_attempt_no FROM fact_gen_states
@@ -88,14 +124,26 @@ export function isFresh(fact: SavedFact | null): boolean {
   return fact !== null && fact.ageSeconds < FRESH_WINDOW_S;
 }
 
-/** Resolves to a timeout result after `ms`; a rejection still propagates (F2). */
-async function withDeadline(attempt: Promise<GenerateResult>, ms: number): Promise<GenerateResult> {
+/**
+ * Runs the generator with a hard deadline. At the deadline the call is
+ * aborted (not just abandoned) and the result is a timeout. A rejection still
+ * propagates and rolls the attempt back (F2).
+ */
+async function withDeadline(
+  run: (signal: AbortSignal) => Promise<GenerateResult>,
+  ms: number,
+): Promise<GenerateResult> {
+  if (ms <= 0) return { kind: "timeout" };
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<GenerateResult>((resolve) => {
-    timer = setTimeout(() => resolve({ kind: "timeout" }), ms);
+    timer = setTimeout(() => {
+      controller.abort(new DOMException("deadline", "TimeoutError"));
+      resolve({ kind: "timeout" });
+    }, ms);
   });
   try {
-    return await Promise.race([attempt, deadline]);
+    return await Promise.race([run(controller.signal), deadline]);
   } finally {
     clearTimeout(timer);
   }
@@ -131,13 +179,13 @@ export async function getFact(
 
   // Begin: fast path without the lock, and note which attempts were committed
   // before we started waiting (F1: ordered by counter, not by timestamp).
-  const before = await latestFact(db, user.id, movieId);
+  const { latest: before, seenAttemptNo } = await readBegin(db, user.id, movieId);
   if (before && isFresh(before)) return { kind: "cached", fact: before };
-  const seenAttemptNo = (await readFailedAttempt(db, user.id, movieId))?.attempt_no ?? 0;
 
   try {
     return await db.$transaction(
       async (tx) => {
+        const txExpiresAt = Date.now() + txTimeoutMs;
         // Lock: one attempt per (user, movie) at a time, across all server instances.
         await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${lockTimeout}'`);
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}), ${movieId})::text`;
@@ -163,13 +211,20 @@ export async function getFact(
         const attemptNo = claimed?.attempt_no;
         if (attemptNo === undefined) throw new Error("attempt not claimed");
 
+        // However long the lock wait took, the call must end before the
+        // transaction can expire, leaving time to write the outcome.
+        const budgetMs = Math.min(genTimeoutMs, txExpiresAt - Date.now() - COMMIT_RESERVE_MS);
         const result = await withDeadline(
-          generate({
-            title: movie.title,
-            releaseYear: movie.releaseYear,
-            previousFact: latest?.text ?? null,
-          }),
-          genTimeoutMs,
+          (signal) =>
+            generate(
+              {
+                title: movie.title,
+                releaseYear: movie.releaseYear,
+                previousFact: latest?.text ?? null,
+              },
+              signal,
+            ),
+          budgetMs,
         );
 
         if (result.kind === "fact") {
@@ -201,11 +256,16 @@ export async function getFact(
       },
     );
   } catch (error) {
-    // Rolled back (F2) or gave up waiting for the lock (F3): nothing was
-    // committed, so answer from what's saved.
-    return failure(
-      await latestFact(db, user.id, movieId),
-      isLockTimeout(error) ? "lock_timeout" : "aborted",
-    );
+    // Rolled back (F2), gave up at lock_timeout (F3), or never got a pooled
+    // connection: nothing of ours was committed, so answer from what's saved.
+    let latest = before;
+    try {
+      latest = await latestFact(db, user.id, movieId);
+    } catch {
+      // The database is struggling; the fact read at Begin is still valid.
+    }
+    // Someone else may have just succeeded: that's a cache hit, not a failure.
+    if (latest && isFresh(latest)) return { kind: "cached", fact: latest };
+    return failure(latest, isLockTimeout(error) ? "lock_timeout" : "aborted");
   }
 }
