@@ -7,6 +7,8 @@ Many times when I watch a movie, I am so amazed by the experience that I do not 
 This tool aims to simplify that jagged path by modeling the problem as a graph! 
 It saves your favorite movie, shows you a short spoiler-free fact about it, and lets you explore other films through their lead actors.
 
+![Movie Mentat showing a spoiler-free fact for The Great Gatsby, reached from Blade Runner 2049 through Ryan Gosling, Drive and Carey Mulligan, with the explore graph below](docs/screenshot.png)
+
 The planning documents are part of the submission. [`PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) describes how the app should behave, [`PLAN.md`](PLAN.md) records every design decision with the options that were considered, [`spec/`](spec/README.md) holds the TLA+ model of fact generation, and [`AI_USAGE.md`](AI_USAGE.md) logs how AI was used at each step.
 
 ## Invariants
