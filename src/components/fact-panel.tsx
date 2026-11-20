@@ -82,7 +82,15 @@ function Spinner({ className = "h-3.5 w-3.5" }: { className?: string }) {
   );
 }
 
-function FactBody({ state, onRetry }: { state: FactState; onRetry: () => void }) {
+function FactBody({
+  state,
+  onRetry,
+  textClass,
+}: {
+  state: FactState;
+  onRetry: () => void;
+  textClass: string;
+}) {
   switch (state.kind) {
     case "loading":
       return (
@@ -102,9 +110,7 @@ function FactBody({ state, onRetry }: { state: FactState; onRetry: () => void })
               Fetching a new fact…
             </p>
           ) : null}
-          <p className="text-base leading-relaxed text-neutral-900 dark:text-zinc-50">
-            {state.text}
-          </p>
+          <p className={textClass}>{state.text}</p>
           <GeneratedAt iso={state.generatedAt} />
         </div>
       );
@@ -112,9 +118,7 @@ function FactBody({ state, onRetry }: { state: FactState; onRetry: () => void })
     case "fallback":
       return (
         <div className="flex flex-col gap-3">
-          <p className="text-base leading-relaxed text-neutral-900 dark:text-zinc-50">
-            {state.text}
-          </p>
+          <p className={textClass}>{state.text}</p>
           <GeneratedAt iso={state.generatedAt} />
           <div
             role="status"
@@ -158,37 +162,65 @@ function FactBody({ state, onRetry }: { state: FactState; onRetry: () => void })
  * plus the "New fact" action, which respects the server's cooldown window
  * via `canRequestNew` / `nextAvailableInSeconds`.
  */
+const VARIANTS = {
+  // A card of its own (the dev screens).
+  card: {
+    section:
+      "flex flex-col gap-4 rounded-2xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900",
+    text: "text-base leading-relaxed text-neutral-900 dark:text-zinc-50",
+    actions: "flex flex-wrap items-center gap-2 border-t border-black/5 pt-4 dark:border-white/10",
+  },
+  // Inside the dashboard's "Now viewing" card: the fact is the headline.
+  hero: {
+    section: "flex flex-col gap-4",
+    text: "text-lg font-medium leading-relaxed text-white sm:text-xl",
+    actions: "flex flex-wrap items-center gap-3",
+  },
+} as const;
+
 export function FactPanel({
   state,
   canRequestNew,
   nextAvailableInSeconds,
   onRequestNew,
   onRetry,
+  variant = "card",
 }: {
   state: FactState;
   canRequestNew: boolean;
   nextAvailableInSeconds: number | null;
   onRequestNew: () => void;
   onRetry: () => void;
+  variant?: keyof typeof VARIANTS;
 }) {
+  const styles = VARIANTS[variant];
   return (
-    <section className="flex flex-col gap-4 rounded-2xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+    <section className={styles.section}>
+      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+          <path
+            d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
         Spoiler-free fact
       </h2>
 
       <div aria-live="polite" className="min-h-[4.5rem]">
         {state.kind === "loading" && <span className="sr-only">Loading fact…</span>}
-        <FactBody state={state} onRetry={onRetry} />
+        <FactBody state={state} onRetry={onRetry} textClass={styles.text} />
       </div>
 
       {state.kind !== "error" ? (
-        <div className="flex flex-wrap items-center gap-2 border-t border-black/5 pt-4 dark:border-white/10">
+        <div className={styles.actions}>
           <button
             type="button"
             onClick={onRequestNew}
             disabled={!canRequestNew}
-            className="rounded-full bg-amber-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors duration-150 ease-out hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500 motion-reduce:transition-none dark:focus-visible:ring-offset-zinc-900 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+            className="rounded-full bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors duration-150 ease-out hover:bg-amber-700 dark:bg-amber-400 dark:text-zinc-950 dark:hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500 motion-reduce:transition-none dark:focus-visible:ring-offset-zinc-900 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
           >
             New fact
           </button>

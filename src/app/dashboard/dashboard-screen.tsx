@@ -1,8 +1,8 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useReducer, useRef } from "react";
+import { AppFooter } from "@/components/app-footer";
 import { ErrorNotice } from "@/components/error-notice";
-import { FavoriteMovieCard } from "@/components/favorite-movie-card";
 import { MovieSearch } from "@/components/movie-search";
 import type { MovieSummary } from "@/components/types";
 import { api } from "@/lib/api";
@@ -15,7 +15,8 @@ import {
 } from "@/lib/edit-movie";
 import { createLatestGate } from "@/lib/fact-cache";
 import { useMovieSearch } from "@/lib/use-movie-search";
-import { DashboardFact } from "./dashboard-fact";
+import { Explorer } from "./explorer";
+import { TopBar } from "./top-bar";
 
 const button =
   "rounded-full px-4 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none dark:focus-visible:ring-offset-zinc-900";
@@ -23,19 +24,21 @@ const primary = `${button} bg-amber-600 text-white hover:bg-amber-700`;
 const secondary = `${button} border border-neutral-200 text-neutral-700 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800`;
 
 /**
- * The favorite movie with inline editing (Variant B), and its fact. All
- * transitions go through the pure reducer in lib/edit-movie.ts; this
- * component only performs the side effects the reducer asks for.
+ * The dashboard (decision 20): account and favorite in the top bar, with
+ * inline editing (Variant B); then the movie graph explorer. Editing goes
+ * through the pure reducer in lib/edit-movie.ts; this component only performs
+ * the side effects the reducer asks for.
  */
-export function FavoriteSection({
+export function DashboardScreen({
   userId,
-  userEmail,
+  user,
   initialMovie,
 }: {
   userId: string;
-  userEmail: string;
+  user: { name: string | null; email: string; avatarUrl: string | null };
   initialMovie: MovieSummary;
 }) {
+  const userEmail = user.email;
   const [state, dispatch] = useReducer(reduce, initialMovie, initialMovieState);
   const latest = useRef<MovieState>(state);
   latest.current = state;
@@ -107,45 +110,51 @@ export function FavoriteSection({
   const { view } = state;
 
   return (
-    <>
-      <FavoriteMovieCard
-        movie={displayedMovie(state)}
-        actions={
-          view.kind === "viewing" ? (
-            <button
-              ref={changeButton}
-              type="button"
-              className={secondary}
-              onClick={() => dispatch({ type: "edit" })}
-            >
-              Change movie
-            </button>
-          ) : view.kind === "saving" ? (
-            <span role="status" className="text-sm text-neutral-500 dark:text-zinc-400">
-              Saving…
-            </span>
-          ) : null
-        }
-      />
-
-      {view.kind === "editing" ? (
-        <MovieEditor
-          draft={view.draft}
-          error={view.error}
-          conflict={state.conflict}
-          onDraftChange={(draft) => dispatch({ type: "draftChanged", draft })}
-          onSave={save}
-          onCancel={() => dispatch({ type: "cancel" })}
+    // Always dark (decision 20); `.dark` also switches the shared components.
+    <div className="dark flex min-h-dvh flex-col bg-black text-zinc-100 [color-scheme:dark]">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-2 p-2">
+        <TopBar
+          user={user}
+          favorite={displayedMovie(state)}
+          action={
+            view.kind === "viewing" ? (
+              <button
+                ref={changeButton}
+                type="button"
+                className="rounded-full text-sm font-semibold text-zinc-100 underline underline-offset-4 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                onClick={() => dispatch({ type: "edit" })}
+              >
+                Change
+              </button>
+            ) : view.kind === "saving" ? (
+              <span role="status" className="text-sm text-zinc-400">
+                Saving…
+              </span>
+            ) : null
+          }
         />
-      ) : null}
 
-      {/* While saving, the old movie's fact is hidden; the new one loads after confirmation. */}
-      <DashboardFact
-        userId={userId}
-        movieId={view.kind === "saving" ? null : state.confirmed.tmdbId}
-        onFavoriteChanged={reconcile}
-      />
-    </>
+        {view.kind === "editing" ? (
+          <MovieEditor
+            draft={view.draft}
+            error={view.error}
+            conflict={state.conflict}
+            onDraftChange={(draft) => dispatch({ type: "draftChanged", draft })}
+            onSave={save}
+            onCancel={() => dispatch({ type: "cancel" })}
+          />
+        ) : null}
+
+        {/* Keyed by the confirmed favorite: a new favorite starts a new graph (decision 19). */}
+        <Explorer
+          key={state.confirmed.tmdbId}
+          userId={userId}
+          root={state.confirmed}
+          pending={view.kind === "saving" ? view.draft.selected : null}
+        />
+      </div>
+      <AppFooter />
+    </div>
   );
 }
 

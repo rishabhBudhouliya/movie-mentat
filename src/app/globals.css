@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+/*
+ * `dark:` applies when the system prefers dark (as before) or inside a
+ * `.dark` element. The dashboard is always dark (PLAN.md decision 20), so the
+ * shared components it reuses render their dark styles there.
+ */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    @slot;
+  }
+  &:where(.dark, .dark *) {
+    @slot;
+  }
+}

@@ -1,9 +1,10 @@
 import type { FactResponse } from "@/lib/api";
 
-// Variant B client cache: the last fact, with when it arrived. Reused for up
-// to 30s within the same (user, movie) unless the user explicitly asks for a
-// new one. A different movie is a different key, so switching movies can't
-// show the old movie's fact. The server's 60s window applies independently.
+// Variant B client cache: a fact, with when it arrived. Reused for up to 30s
+// within the same (user, movie) unless the user explicitly asks for a new one.
+// Entries are keyed by (user, movie), so one movie's fact can never be shown
+// for another; the graph keeps one entry per movie (decision 19). The
+// server's 60s window applies independently.
 
 export const CLIENT_CACHE_MS = 30_000;
 

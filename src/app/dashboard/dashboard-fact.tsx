@@ -12,23 +12,25 @@ const FRESH_WINDOW_S = 60;
 type Shown = { key: string; state: FactState; eligibleAt: number | null; inFlight: boolean };
 
 /**
- * The fact for `movieId`, or a placeholder while `movieId` is null (a movie
- * change is being saved: the old fact is hidden, and the new one is requested
- * only after the save is confirmed).
+ * The fact for `movieId` (any movie in the graph), or a placeholder while
+ * `movieId` is null (a favorite change is being saved: the old fact is hidden,
+ * and the new one is requested only after the save is confirmed).
  */
 export function DashboardFact({
   userId,
   movieId,
-  onFavoriteChanged,
+  variant = "card",
 }: {
   userId: string;
   movieId: number | null;
-  /** The server says the favorite changed elsewhere; the parent re-syncs. */
-  onFavoriteChanged: () => void;
+  variant?: "card" | "hero";
 }) {
   const [shown, setShown] = useState<Shown | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const cache = useRef<CachedFact | null>(null); // the last fact, with when it arrived
+  // One entry per movie (decision 19), so revisiting a node within 30s reuses
+  // its fact. It lives as long as this component: the graph remounts it when
+  // the favorite changes, which clears it.
+  const cache = useRef(new Map<string, CachedFact>());
   const gate = useRef(createLatestGate());
   const currentKey = movieId === null ? null : factKey(userId, movieId);
 
@@ -53,9 +55,7 @@ export function DashboardFact({
 
   const load = useCallback(
     async (key: string, id: number, explicit: boolean) => {
-      // One entry, one movie: a different movie invalidates it.
-      if (cache.current && cache.current.key !== key) cache.current = null;
-      const cached = cache.current;
+      const cached = cache.current.get(key) ?? null;
       if (cached && reusable(cached, key, Date.now(), explicit)) {
         gate.current.next(); // anything still in flight is now stale
         setShown(fromEntry(cached));
@@ -88,13 +88,8 @@ export function DashboardFact({
           response: result.data as FactResponse,
           receivedAt: Date.now(),
         };
-        cache.current = entry;
+        cache.current.set(key, entry);
         setShown(fromEntry(entry));
-        return;
-      }
-      if (result.error.code === "favorite_changed") {
-        cache.current = null;
-        onFavoriteChanged();
         return;
       }
       setShown((prev) => {
@@ -114,7 +109,7 @@ export function DashboardFact({
         };
       });
     },
-    [fromEntry, onFavoriteChanged],
+    [fromEntry],
   );
 
   useEffect(() => {
@@ -141,6 +136,7 @@ export function DashboardFact({
 
   return (
     <FactPanel
+      variant={variant}
       state={mine?.state ?? { kind: "loading" }}
       canRequestNew={mine !== null && !mine.inFlight && !waiting}
       nextAvailableInSeconds={waiting ? secondsLeft : null}

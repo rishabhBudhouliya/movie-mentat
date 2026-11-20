@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-function initialsFor(name: string | null, email: string): string {
+export function initialsFor(name: string | null, email: string): string {
   const source = name?.trim() || email;
   const parts = source
     .split(/\s+/)
@@ -20,6 +20,11 @@ function localPart(email: string): string {
   return email.split("@")[0] ?? email;
 }
 
+/** The Google name, or the email's local part when Google didn't give one. */
+export function displayNameFor(name: string | null, email: string): string {
+  return name?.trim() || localPart(email);
+}
+
 /**
  * Account summary shown in the dashboard: avatar (with initials fallback),
  * display name (falling back to the email's local part), email, and a
@@ -36,7 +41,7 @@ export function ProfileCard({
   avatarUrl: string | null;
   logoutAction: string;
 }) {
-  const displayName = name?.trim() || localPart(email);
+  const displayName = displayNameFor(name, email);
   const initials = initialsFor(name, email);
 
   return (

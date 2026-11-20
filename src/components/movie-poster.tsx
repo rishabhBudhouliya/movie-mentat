@@ -8,7 +8,9 @@ import Image from "next/image";
 
 const SIZES = {
   sm: { width: 46, height: 69, textClass: "text-xs" },
+  md: { width: 64, height: 96, textClass: "text-sm" },
   lg: { width: 120, height: 180, textClass: "text-2xl" },
+  xl: { width: 200, height: 300, textClass: "text-4xl" },
 } as const;
 
 export type PosterSize = keyof typeof SIZES;
