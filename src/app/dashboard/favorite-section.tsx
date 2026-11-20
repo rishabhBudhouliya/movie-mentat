@@ -208,6 +208,7 @@ function MovieEditor({
       <MovieSearch
         label="Change your favorite movie"
         inputRef={input}
+        selectedId={draft.selected?.tmdbId ?? null}
         query={search.query}
         onQueryChange={search.setQuery}
         state={search.state}

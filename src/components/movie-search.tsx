@@ -25,6 +25,7 @@ export function MovieSearch({
   disabled = false,
   label = "Your favorite movie",
   inputRef,
+  selectedId = null,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
@@ -36,6 +37,8 @@ export function MovieSearch({
   label?: string;
   /** Lets a parent move focus into the search (e.g. when an editor opens). */
   inputRef?: Ref<HTMLInputElement>;
+  /** The movie currently chosen (inline editing), shown as selected. */
+  selectedId?: number | null;
 }) {
   const inputId = useId();
   const statusId = useId();
@@ -90,9 +93,28 @@ export function MovieSearch({
           itemRefs={itemRefs}
           onItemKeyDown={handleItemKeyDown}
           disabled={disabled}
+          selectedId={selectedId}
         />
       </div>
     </div>
+  );
+}
+
+/** A chosen card is unmistakable: amber border and ring, not just hover color. */
+function cardTone(selected: boolean): string {
+  return selected
+    ? "border-amber-500 bg-amber-50 ring-2 ring-amber-500/60 dark:border-amber-500 dark:bg-amber-950/30"
+    : "border-neutral-200 bg-white hover:border-amber-300 hover:bg-amber-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-amber-700/60 dark:hover:bg-zinc-800";
+}
+
+function SelectedBadge() {
+  return (
+    <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white">
+      <svg viewBox="0 0 20 20" aria-hidden="true" className="h-3.5 w-3.5" fill="currentColor">
+        <path d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.8 3.8 6.8-6.8a1 1 0 0 1 1.4 0Z" />
+      </svg>
+      Selected
+    </span>
   );
 }
 
@@ -104,6 +126,7 @@ function SearchResults({
   itemRefs,
   onItemKeyDown,
   disabled,
+  selectedId,
 }: {
   state: SearchState;
   onSelect: (movie: MovieSummary) => void;
@@ -112,6 +135,7 @@ function SearchResults({
   itemRefs: MutableRefObject<Array<HTMLButtonElement | null>>;
   onItemKeyDown: (event: KeyboardEvent<HTMLButtonElement>, index: number) => void;
   disabled: boolean;
+  selectedId: number | null;
 }) {
   switch (state.kind) {
     case "idle":
@@ -143,7 +167,8 @@ function SearchResults({
                 onClick={() => onSelect(movie)}
                 onKeyDown={(event) => onItemKeyDown(event, index)}
                 disabled={disabled}
-                className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-white p-2.5 text-left transition-colors duration-150 ease-out hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-amber-700/60 dark:hover:bg-zinc-800"
+                aria-pressed={selectedId === null ? undefined : movie.tmdbId === selectedId}
+                className={`flex w-full items-center gap-3 rounded-lg border p-2.5 text-left transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none ${cardTone(movie.tmdbId === selectedId)}`}
               >
                 <MoviePoster title={movie.title} posterUrl={movie.posterUrl} size="sm" />
                 <span className="flex flex-col">
@@ -154,6 +179,7 @@ function SearchResults({
                     {movie.releaseYear ?? "Year unknown"}
                   </span>
                 </span>
+                {movie.tmdbId === selectedId ? <SelectedBadge /> : null}
               </button>
             </li>
           ))}
@@ -174,7 +200,8 @@ function SearchResults({
                 type="button"
                 onClick={() => onSelect(movie)}
                 disabled={disabled}
-                className="flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 text-center transition-colors duration-150 ease-out hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-amber-700/60 dark:hover:bg-zinc-800"
+                aria-pressed={selectedId === null ? undefined : movie.tmdbId === selectedId}
+                className={`flex flex-col items-center gap-3 rounded-xl border p-4 text-center transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none ${cardTone(movie.tmdbId === selectedId)}`}
               >
                 <MoviePoster title={movie.title} posterUrl={movie.posterUrl} size="lg" />
                 <span className="flex flex-col">
@@ -185,6 +212,7 @@ function SearchResults({
                     {movie.releaseYear ?? "Year unknown"}
                   </span>
                 </span>
+                {movie.tmdbId === selectedId ? <SelectedBadge /> : null}
               </button>
             ))}
           </div>

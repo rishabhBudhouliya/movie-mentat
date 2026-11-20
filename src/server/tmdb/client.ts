@@ -9,6 +9,9 @@ import { posterUrl } from "@/server/movies/repository";
 
 const API = "https://api.themoviedb.org/3";
 const TIMEOUT_MS = 4000;
+// Suggestions shown per search: enough to disambiguate remakes (the two
+// *Dune*s are TMDB results 1 and 4), short enough to scan.
+export const MAX_RESULTS = 5;
 
 /** A catalog entry as we persist it (poster *path*, not URL). */
 export type CatalogMovie = {
@@ -92,7 +95,7 @@ export async function searchMovies(
       seen.add(movie.tmdbId);
       return true;
     });
-    return { kind: "ok", value: movies.slice(0, 10) };
+    return { kind: "ok", value: movies.slice(0, MAX_RESULTS) };
   } catch {
     return { kind: "unavailable" };
   }

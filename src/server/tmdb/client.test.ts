@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseMovieQuery } from "@/lib/movie-query";
-import { getMovie, searchMovies } from "./client";
+import { getMovie, MAX_RESULTS, searchMovies } from "./client";
 
 const now = new Date("2026-11-19T00:00:00Z");
 
@@ -63,6 +63,16 @@ describe("TMDB client", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.kind === "ok" && result.value.map((m) => m.tmdbId)).toEqual([841, 438631]);
+  });
+
+  it("returns at most five suggestions", async () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ ...dune2021, id: 1000 + i }));
+    fetchMock.mockResolvedValue(respond({ results: many }));
+
+    const result = await searchMovies(okQuery("Dune"));
+
+    expect(result.kind === "ok" && result.value.length).toBe(MAX_RESULTS);
+    expect(MAX_RESULTS).toBe(5);
   });
 
   it("reports the catalog as unavailable on HTTP errors, timeouts, and bad JSON", async () => {
