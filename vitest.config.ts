@@ -28,7 +28,12 @@ export default defineConfig({
       // High gate on core modules only (PLAN.md). Glue that needs Google or
       // Next's request context is covered by the end-to-end check instead.
       include: ["src/server/**/*.ts", "src/lib/**/*.ts"],
-      exclude: ["src/server/auth/google.ts", "src/server/auth/current-user.ts", "**/*.test.ts"],
+      exclude: [
+        "src/server/auth/google.ts",
+        "src/server/auth/current-user.ts",
+        "src/lib/use-*.ts", // React hooks: thin wiring around the tested pure modules
+        "**/*.test.ts",
+      ],
       thresholds: { lines: 90, branches: 85, functions: 90, statements: 90 },
     },
   },

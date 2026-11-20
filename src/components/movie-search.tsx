@@ -1,6 +1,6 @@
 "use client";
 
-import type { KeyboardEvent, MutableRefObject } from "react";
+import type { KeyboardEvent, MutableRefObject, Ref } from "react";
 import { useId, useRef } from "react";
 import { assertNever } from "./assert-never";
 import { ErrorNotice } from "./error-notice";
@@ -24,6 +24,7 @@ export function MovieSearch({
   onEditSearch,
   disabled = false,
   label = "Your favorite movie",
+  inputRef,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
@@ -33,6 +34,8 @@ export function MovieSearch({
   onEditSearch: () => void;
   disabled?: boolean;
   label?: string;
+  /** Lets a parent move focus into the search (e.g. when an editor opens). */
+  inputRef?: Ref<HTMLInputElement>;
 }) {
   const inputId = useId();
   const statusId = useId();
@@ -65,6 +68,7 @@ export function MovieSearch({
           {label}
         </label>
         <input
+          ref={inputRef}
           id={inputId}
           type="text"
           aria-controls={statusId}

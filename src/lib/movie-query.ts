@@ -1,4 +1,4 @@
-import type { MovieSummary } from "@/components/types";
+import type { MovieSummary, SearchState } from "@/components/types";
 
 // Shared by the browser (to decide what Enter does) and the server (to validate
 // input), so both apply the same rules. PLAN.md P2: 1–200 chars after trimming.
@@ -68,4 +68,21 @@ export function resolveSubmission(query: ParsedQuery, movies: MovieSummary[]): S
   if (first && second) return { kind: "ambiguous", candidates: [first, second] };
   if (first) return { kind: "exact", movie: first };
   return { kind: "choose", movies };
+}
+
+/** A search outcome together with the exact (normalized) query it answers. */
+export type SearchResult = { forText: string; state: SearchState };
+
+/**
+ * What the list shows for the current input. Results for any other query,
+ * including the previous one during the debounce, are never shown or clickable.
+ */
+export function visibleSearchState(result: SearchResult | null, query: string): SearchState {
+  const parsed = parseMovieQuery(query);
+  if (parsed.kind === "invalid") {
+    return parsed.reason === "too_long"
+      ? { kind: "error", message: "That title is too long." }
+      : { kind: "idle" };
+  }
+  return result?.forText === parsed.text ? result.state : { kind: "loading" };
 }

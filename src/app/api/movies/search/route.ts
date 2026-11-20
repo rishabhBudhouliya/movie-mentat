@@ -1,11 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { parseMovieQuery, QUERY_MAX } from "@/lib/movie-query";
 import { getCurrentUser } from "@/server/auth/current-user";
-import { jsonError, unauthorized } from "@/server/http";
+import { jsonError, unauthorized, withApiErrors } from "@/server/http";
 import { searchMovies, toSummary } from "@/server/tmdb/client";
 
 // Signed-in users only, so the endpoint can't be used as an open TMDB proxy.
-export async function GET(request: NextRequest) {
+export const GET = withApiErrors(async (request: NextRequest) => {
   if (!(await getCurrentUser())) return unauthorized();
 
   const query = parseMovieQuery(request.nextUrl.searchParams.get("q") ?? "");
@@ -22,4 +22,4 @@ export async function GET(request: NextRequest) {
     return jsonError(503, "catalog_unavailable", "Movie search is unavailable. Try again.");
   }
   return NextResponse.json({ movies: result.value.map(toSummary) });
-}
+});

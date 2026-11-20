@@ -80,7 +80,19 @@ export const factResponseSchema = z.discriminatedUnion("source", [
 ]);
 export type FactResponse = z.infer<typeof factResponseSchema>;
 
+const meSchema = z.object({
+  user: z.object({
+    name: z.string().nullable(),
+    email: z.string(),
+    avatarUrl: z.string().nullable(),
+  }),
+  favoriteMovie: movieSummarySchema.nullable(),
+});
+export type Me = z.infer<typeof meSchema>;
+
 export const api = {
+  getMe: () => request("/api/me", meSchema),
+
   searchMovies: (query: string, signal?: AbortSignal) =>
     request(
       `/api/movies/search?${new URLSearchParams({ q: query })}`,
@@ -88,7 +100,8 @@ export const api = {
       { signal },
     ),
 
-  getFact: () => request("/api/fact", factResponseSchema),
+  getFact: (movieId: number) =>
+    request(`/api/fact?${new URLSearchParams({ movieId: String(movieId) })}`, factResponseSchema),
 
   setFavoriteMovie: (tmdbId: number) =>
     request("/api/me/movie", z.object({ movie: movieSummarySchema }), {

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { MovieSummary } from "@/components/types";
-import { normalizeTitle, parseMovieQuery, QUERY_MAX, resolveSubmission } from "./movie-query";
+import type { MovieSummary, SearchState } from "@/components/types";
+import {
+  normalizeTitle,
+  parseMovieQuery,
+  QUERY_MAX,
+  resolveSubmission,
+  visibleSearchState,
+} from "./movie-query";
 
 const now = new Date("2026-11-19T00:00:00Z");
 const movie = (tmdbId: number, title: string, releaseYear: number | null): MovieSummary => ({
@@ -77,5 +83,27 @@ describe("resolveSubmission (what Enter does)", () => {
   it("reports no match for empty results or invalid input", () => {
     expect(resolveSubmission(parseMovieQuery("zzqx", now), [])).toEqual({ kind: "empty" });
     expect(resolveSubmission(parseMovieQuery("", now), [dune2021])).toEqual({ kind: "empty" });
+  });
+});
+
+describe("visibleSearchState (results only for the query they answer)", () => {
+  const results: SearchState = { kind: "results", movies: [movie(1, "Dune", 2021)] };
+  const forDune = { forText: "Dune", state: results };
+
+  it("shows results for the exact query they answer", () => {
+    expect(visibleSearchState(forDune, "  Dune ")).toBe(results);
+  });
+
+  it("hides the previous query's results the moment the input changes (no stale clicks)", () => {
+    expect(visibleSearchState(forDune, "Arrival")).toEqual({ kind: "loading" });
+  });
+
+  it("is idle for empty input and an error for over-long input", () => {
+    expect(visibleSearchState(forDune, "   ")).toEqual({ kind: "idle" });
+    expect(visibleSearchState(null, "x".repeat(QUERY_MAX + 1))).toMatchObject({ kind: "error" });
+  });
+
+  it("is loading before any result has arrived", () => {
+    expect(visibleSearchState(null, "Dune")).toEqual({ kind: "loading" });
   });
 });

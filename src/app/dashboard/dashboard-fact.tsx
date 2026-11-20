@@ -4,73 +4,148 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FactPanel } from "@/components/fact-panel";
 import type { FactState } from "@/components/types";
 import { api, type FactResponse } from "@/lib/api";
+import { type CachedFact, createLatestGate, factKey, reusable } from "@/lib/fact-cache";
 
 const FRESH_WINDOW_S = 60;
 
-type Shown = { text: string; generatedAt: string };
+/** What the panel shows, tagged with the (user, movie) key it belongs to. */
+type Shown = { key: string; state: FactState; eligibleAt: number | null; inFlight: boolean };
 
 /**
- * Loads the fact on mount and on "New fact". The server enforces the 60s
- * window; this only mirrors it so the button is enabled when a request can
- * actually produce a new fact. Previous text stays visible while refreshing.
+ * The fact for `movieId`, or a placeholder while `movieId` is null (a movie
+ * change is being saved: the old fact is hidden, and the new one is requested
+ * only after the save is confirmed).
  */
-export function DashboardFact() {
-  const [state, setState] = useState<FactState>({ kind: "loading" });
-  const [eligibleAt, setEligibleAt] = useState<number | null>(null);
+export function DashboardFact({
+  userId,
+  movieId,
+  onFavoriteChanged,
+}: {
+  userId: string;
+  movieId: number | null;
+  /** The server says the favorite changed elsewhere; the parent re-syncs. */
+  onFavoriteChanged: () => void;
+}) {
+  const [shown, setShown] = useState<Shown | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [inFlight, setInFlight] = useState(false);
-  const shown = useRef<Shown | null>(null);
+  const cache = useRef<CachedFact | null>(null); // the last fact, with when it arrived
+  const gate = useRef(createLatestGate());
+  const currentKey = movieId === null ? null : factKey(userId, movieId);
 
-  const load = useCallback(async () => {
-    setInFlight(true);
-    const previous = shown.current;
-    if (previous) setState({ kind: "fact", ...previous, refreshing: true });
-
-    const result = await api.getFact();
-    setInFlight(false);
-
-    if (result.ok) {
-      const data: FactResponse = result.data;
-      const { text, generatedAt, ageSeconds } = data.fact;
-      shown.current = { text, generatedAt };
-      // Convert the server's DB-clock age into a local deadline.
-      setEligibleAt(Date.now() + Math.max(0, FRESH_WINDOW_S - ageSeconds) * 1000);
-      setState(
-        data.source === "fallback"
-          ? { kind: "fallback", text, generatedAt, notice: data.notice }
-          : { kind: "fact", text, generatedAt, refreshing: false },
-      );
-      return;
-    }
-
-    // Couldn't load: keep showing what we had, and say the refresh failed.
-    setState(
-      previous
-        ? { kind: "fallback", ...previous, notice: result.error.message }
-        : { kind: "error", message: result.error.message },
-    );
+  const fromEntry = useCallback((entry: CachedFact): Shown => {
+    const { fact } = entry.response;
+    return {
+      key: entry.key,
+      // The server's DB-clock age, anchored to when this response arrived.
+      eligibleAt: entry.receivedAt + Math.max(0, FRESH_WINDOW_S - fact.ageSeconds) * 1000,
+      inFlight: false,
+      state:
+        entry.response.source === "fallback"
+          ? {
+              kind: "fallback",
+              text: fact.text,
+              generatedAt: fact.generatedAt,
+              notice: entry.response.notice,
+            }
+          : { kind: "fact", text: fact.text, generatedAt: fact.generatedAt, refreshing: false },
+    };
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const load = useCallback(
+    async (key: string, id: number, explicit: boolean) => {
+      // One entry, one movie: a different movie invalidates it.
+      if (cache.current && cache.current.key !== key) cache.current = null;
+      const cached = cache.current;
+      if (cached && reusable(cached, key, Date.now(), explicit)) {
+        gate.current.next(); // anything still in flight is now stale
+        setShown(fromEntry(cached));
+        return;
+      }
 
-  // Tick once a second so the button enables itself when the window passes.
+      const ticket = gate.current.next();
+      setShown((prev) =>
+        prev?.key === key && (prev.state.kind === "fact" || prev.state.kind === "fallback")
+          ? {
+              // Keep this movie's text visible while refreshing.
+              ...prev,
+              inFlight: true,
+              state: {
+                kind: "fact",
+                text: prev.state.text,
+                generatedAt: prev.state.generatedAt,
+                refreshing: true,
+              },
+            }
+          : { key, state: { kind: "loading" }, eligibleAt: null, inFlight: true },
+      );
+
+      const result = await api.getFact(id);
+      if (!gate.current.isLatest(ticket)) return; // late response for a movie we left
+
+      if (result.ok) {
+        const entry: CachedFact = {
+          key,
+          response: result.data as FactResponse,
+          receivedAt: Date.now(),
+        };
+        cache.current = entry;
+        setShown(fromEntry(entry));
+        return;
+      }
+      if (result.error.code === "favorite_changed") {
+        cache.current = null;
+        onFavoriteChanged();
+        return;
+      }
+      setShown((prev) => {
+        const previous = prev?.key === key && prev.state.kind === "fact" ? prev.state : null;
+        return {
+          key,
+          inFlight: false,
+          eligibleAt: prev?.key === key ? prev.eligibleAt : null,
+          state: previous
+            ? {
+                kind: "fallback",
+                text: previous.text,
+                generatedAt: previous.generatedAt,
+                notice: result.error.message,
+              }
+            : { kind: "error", message: result.error.message },
+        };
+      });
+    },
+    [fromEntry, onFavoriteChanged],
+  );
+
+  useEffect(() => {
+    if (movieId === null || currentKey === null) {
+      gate.current.next(); // ignore responses for the movie being replaced
+      return;
+    }
+    void load(currentKey, movieId, false);
+  }, [currentKey, movieId, load]);
+
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const secondsLeft = eligibleAt === null ? null : Math.ceil((eligibleAt - now) / 1000);
+  // Chosen during render: a fact is only ever shown under the movie it's for,
+  // even in the commit before the effect above has run.
+  const mine = shown !== null && shown.key === currentKey ? shown : null;
+  const secondsLeft = mine?.eligibleAt == null ? null : Math.ceil((mine.eligibleAt - now) / 1000);
   const waiting = secondsLeft !== null && secondsLeft > 0;
+  const reload = () => {
+    if (currentKey !== null && movieId !== null) void load(currentKey, movieId, true);
+  };
 
   return (
     <FactPanel
-      state={state}
-      canRequestNew={!inFlight && !waiting}
+      state={mine?.state ?? { kind: "loading" }}
+      canRequestNew={mine !== null && !mine.inFlight && !waiting}
       nextAvailableInSeconds={waiting ? secondsLeft : null}
-      onRequestNew={() => void load()}
-      onRetry={() => void load()}
+      onRequestNew={reload}
+      onRetry={reload}
     />
   );
 }

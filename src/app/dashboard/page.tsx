@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
-import { FavoriteMovieCard } from "@/components/favorite-movie-card";
 import { ProfileCard } from "@/components/profile-card";
 import { requireUser } from "@/server/auth/current-user";
 import { getFavoriteMovie } from "@/server/movies/repository";
-import { DashboardFact } from "./dashboard-fact";
+import { FavoriteSection } from "./favorite-section";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -20,8 +19,8 @@ export default async function DashboardPage() {
           avatarUrl={user.avatarUrl}
           logoutAction="/api/auth/logout"
         />
-        <FavoriteMovieCard movie={movie} />
-        <DashboardFact />
+        {/* Server-rendered first paint; the client takes over for editing (Variant B). */}
+        <FavoriteSection userId={user.id} userEmail={user.email} initialMovie={movie} />
       </div>
     </AppShell>
   );

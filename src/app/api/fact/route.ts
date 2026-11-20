@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/server/auth/current-user";
 import { getFact, type SavedFact } from "@/server/facts/service";
-import { jsonError, unauthorized } from "@/server/http";
+import { jsonError, unauthorized, withApiErrors } from "@/server/http";
 
 function toDto(fact: SavedFact) {
   return {
@@ -22,9 +22,17 @@ const FALLBACK_NOTICE = "Couldn't get a new fact right now, so here's your most 
 
 // The fact for the signed-in user's favorite movie. The user comes from the
 // session; there's no parameter that could name another user.
-export async function GET() {
+export const GET = withApiErrors(async (request: NextRequest) => {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
+
+  // The client says which movie it's showing. If another tab changed the
+  // favorite since, answering with the new movie's fact would put it under
+  // the old title, so report the change instead and let the client re-sync.
+  const expected = request.nextUrl.searchParams.get("movieId");
+  if (expected !== null && Number(expected) !== user.favoriteMovieId) {
+    return jsonError(409, "favorite_changed", "Your favorite movie changed in another tab.");
+  }
 
   let outcome: Awaited<ReturnType<typeof getFact>>;
   try {
@@ -52,4 +60,4 @@ export async function GET() {
     case "no_movie":
       return jsonError(409, "no_favorite_movie", "Pick a favorite movie first.");
   }
-}
+});

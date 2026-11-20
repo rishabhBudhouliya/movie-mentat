@@ -1,13 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/server/auth/current-user";
-import { jsonError, unauthorized } from "@/server/http";
+import { jsonError, unauthorized, withApiErrors } from "@/server/http";
 import { saveFavoriteMovie } from "@/server/movies/favorite";
 
 const bodySchema = z.object({ tmdbId: z.number().int().positive() });
 
 // The user comes from the session, never from the body.
-export async function PUT(request: NextRequest) {
+export const PUT = withApiErrors(async (request: NextRequest) => {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
 
@@ -23,4 +23,4 @@ export async function PUT(request: NextRequest) {
     case "catalog_unavailable":
       return jsonError(503, "catalog_unavailable", "Movie catalog is unavailable. Try again.");
   }
-}
+});
