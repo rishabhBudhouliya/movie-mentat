@@ -19,8 +19,10 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@gsap/react": "2.1.2",
     "@prisma/adapter-pg": "7.9.1",
     "@prisma/client": "7.9.1",
+    "gsap": "3.15.1",
     "next": "16.4.6",
     "openid-client": "6.9.0",
     "react": "19.3.1",
