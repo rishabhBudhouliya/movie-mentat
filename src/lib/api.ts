@@ -80,6 +80,14 @@ export const factResponseSchema = z.discriminatedUnion("source", [
 ]);
 export type FactResponse = z.infer<typeof factResponseSchema>;
 
+const castMemberSchema = z.object({
+  personId: z.number(),
+  name: z.string(),
+  character: z.string().nullable(),
+  profileUrl: z.string().nullable(),
+});
+export type CastMember = z.infer<typeof castMemberSchema>;
+
 const meSchema = z.object({
   user: z.object({
     name: z.string().nullable(),
@@ -102,6 +110,20 @@ export const api = {
 
   getFact: (movieId: number) =>
     request(`/api/fact?${new URLSearchParams({ movieId: String(movieId) })}`, factResponseSchema),
+
+  /** A movie's top-billed cast: the directions the graph offers from it. */
+  getCast: (movieId: number) =>
+    request(
+      `/api/movies/${encodeURIComponent(movieId)}/cast`,
+      z.object({ cast: z.array(castMemberSchema) }),
+    ),
+
+  /** Films where the person had a leading role. */
+  getLeadingFilms: (personId: number) =>
+    request(
+      `/api/people/${encodeURIComponent(personId)}/films`,
+      z.object({ films: z.array(movieSummarySchema) }),
+    ),
 
   setFavoriteMovie: (tmdbId: number) =>
     request("/api/me/movie", z.object({ movie: movieSummarySchema }), {

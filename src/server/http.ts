@@ -10,6 +10,19 @@ export function jsonError(status: number, code: string, message: string): NextRe
 export const unauthorized = () => jsonError(401, "unauthorized", "Sign in to continue.");
 
 /**
+ * Catalog data (cast lists, filmographies) changes rarely and isn't per-user
+ * secret, but it sits behind sign-in, so only the browser may cache it.
+ */
+export const CATALOG_CACHE_HEADERS = { "Cache-Control": "private, max-age=3600" };
+
+/** A TMDB ID from a URL (query or path segment): a positive integer, or null. */
+export function parseTmdbId(raw: string | null | undefined): number | null {
+  if (raw == null || !/^[1-9]\d{0,9}$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id <= 2_147_483_647 ? id : null; // Postgres int
+}
+
+/**
  * Wraps a route handler so that any unexpected failure (a database outage,
  * say) still answers with the standard error shape instead of a bare 500.
  */

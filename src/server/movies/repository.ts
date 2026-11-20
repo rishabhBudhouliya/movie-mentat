@@ -4,8 +4,14 @@ import { getDb } from "@/server/db";
 
 const POSTER_BASE = "https://image.tmdb.org/t/p/w342";
 
+const PROFILE_BASE = "https://image.tmdb.org/t/p/w185";
+
 export function posterUrl(posterPath: string | null): string | null {
   return posterPath ? `${POSTER_BASE}${posterPath}` : null;
+}
+
+export function profileUrl(profilePath: string | null): string | null {
+  return profilePath ? `${PROFILE_BASE}${profilePath}` : null;
 }
 
 /** The signed-in user's saved favorite, read from our DB (works during a TMDB outage). */

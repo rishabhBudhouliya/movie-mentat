@@ -23,6 +23,8 @@ const DEFAULTS = {
   // Enforced here too, not just inside the OpenAI call: a generator that never
   // settles would otherwise hold the lock and the transaction forever (L1).
   genTimeoutMs: OPENAI_TIMEOUT_MS,
+  // Generations in progress per user, across all movies and instances (decision 18).
+  generationSlots: 2,
 };
 // Time kept back at the end of the transaction for writing the outcome, so the
 // OpenAI call always ends before the transaction can expire (Codex review):
@@ -39,7 +41,8 @@ export type FailureCause =
   | "abstained" // the model wasn't confident (or refused)
   | "shared" // another request's attempt just failed and we waited on it (S4)
   | "lock_timeout" // waited too long behind other attempts (exempt from S4, F3)
-  | "aborted"; // rolled back (F2), or no pooled connection in time (exempt from S4, F4)
+  | "aborted" // rolled back (F2), or no pooled connection in time (exempt from S4, F4)
+  | "busy"; // this user already has the maximum generations in progress (decision 18)
 
 export type FactOutcome =
   | { kind: "fresh"; fact: SavedFact }
@@ -162,17 +165,36 @@ function isLockTimeout(error: unknown): boolean {
 }
 
 /**
- * The fact for the signed-in user's favorite movie. Every query is scoped to
- * `user.id` from the session (S1); there is no way to ask for another user's.
+ * Claims one of the user's generation slots for the rest of the transaction,
+ * without waiting: `pg_try_advisory_xact_lock` on (user, -k). TMDB IDs are
+ * positive, so these keys never collide with the per-movie locks. Tried one
+ * at a time, so a request never holds more than one slot.
+ */
+async function claimGenerationSlot(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  slots: number,
+): Promise<boolean> {
+  for (let k = 1; k <= slots; k += 1) {
+    const [row] = await tx.$queryRaw<{ claimed: boolean }[]>`
+      SELECT pg_try_advisory_xact_lock(hashtext(${userId}), ${-k}) AS claimed`;
+    if (row?.claimed) return true;
+  }
+  return false;
+}
+
+/**
+ * The fact for (signed-in user, movie). Every query is scoped to `user.id`
+ * from the session (S1); there is no way to ask for another user's. The movie
+ * must already have a snapshot row (`ensureMovie`); otherwise `no_movie`.
  */
 export async function getFact(
   user: AuthedUser,
+  movieId: TmdbId,
   generate: FactGenerator = generateWithOpenAI,
   options: FactServiceOptions = {},
 ): Promise<FactOutcome> {
-  const { lockTimeout, txTimeoutMs, genTimeoutMs } = { ...DEFAULTS, ...options };
-  const movieId: TmdbId | null = user.favoriteMovieId;
-  if (movieId === null) return { kind: "no_movie" };
+  const { lockTimeout, txTimeoutMs, genTimeoutMs, generationSlots } = { ...DEFAULTS, ...options };
   const db = getDb();
   const movie = await db.movie.findUnique({ where: { tmdbId: movieId } });
   if (!movie) return { kind: "no_movie" };
@@ -199,6 +221,13 @@ export async function getFact(
         const state = await readFailedAttempt(tx, user.id, movieId);
         if (state?.failed_attempt_no != null && state.failed_attempt_no > seenAttemptNo) {
           return failure(latest, "shared"); // S4: an attempt we waited on just failed
+        }
+
+        // Decision 18: at most N generations per user. Checked only by the
+        // request about to generate, so waiters never hold a slot. Busy writes
+        // nothing and claims no attempt, like the F3/F4 exemptions.
+        if (!(await claimGenerationSlot(tx, user.id, generationSlots))) {
+          return failure(latest, "busy");
         }
 
         // Gen: claim the next attempt number, then call OpenAI while holding the lock.

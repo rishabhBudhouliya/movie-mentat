@@ -1,14 +1,13 @@
 import type { MovieSummary } from "@/components/types";
 import type { AuthedUser } from "@/server/auth/session";
 import { getDb } from "@/server/db";
-import { type CatalogMovie, type CatalogResult, getMovie, toSummary } from "@/server/tmdb/client";
+import { getMovie, toSummary } from "@/server/tmdb/client";
+import { type LookupMovie, snapshotUpsert } from "./snapshot";
 
 export type SaveFavoriteResult =
   | { kind: "saved"; movie: MovieSummary }
   | { kind: "not_found" }
   | { kind: "catalog_unavailable" };
-
-type LookupMovie = (tmdbId: number) => Promise<CatalogResult<CatalogMovie | null>>;
 
 /**
  * Saves the signed-in user's favorite. The client sends only a catalog ID; the
@@ -25,17 +24,8 @@ export async function saveFavoriteMovie(
   if (found.value === null) return { kind: "not_found" };
   const movie = found.value;
 
-  const snapshot = {
-    title: movie.title,
-    releaseYear: movie.releaseYear,
-    posterPath: movie.posterPath,
-  };
   await getDb().$transaction([
-    getDb().movie.upsert({
-      where: { tmdbId: movie.tmdbId },
-      create: { tmdbId: movie.tmdbId, ...snapshot },
-      update: snapshot,
-    }),
+    snapshotUpsert(movie),
     getDb().user.update({ where: { id: user.id }, data: { favoriteMovieId: movie.tmdbId } }),
   ]);
   return { kind: "saved", movie: toSummary(movie) };

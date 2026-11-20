@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { UserId } from "@/lib/brand";
+import type { TmdbId, UserId } from "@/lib/brand";
 import { createSession, getSessionUser } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { resetDb } from "../../../test/reset-db";
@@ -19,6 +19,7 @@ import {
 
 const db = getDb();
 const DUNE = 438631;
+const DUNE_ID = DUNE as TmdbId;
 
 async function userWithFavorite(sub: string, movieId = DUNE) {
   await db.movie.upsert({
@@ -62,7 +63,7 @@ describe("getFact: 60-second cache window", () => {
     const user = await userWithFavorite("a");
     const generate = stubGenerator(ok());
 
-    const outcome = await getFact(user, generate);
+    const outcome = await getFact(user, DUNE_ID, generate);
 
     expect(outcome).toMatchObject({ kind: "fresh", fact: { text: "A fresh fact." } });
     expect(generate).toHaveBeenCalledOnce();
@@ -74,7 +75,7 @@ describe("getFact: 60-second cache window", () => {
     await seedFact(user.id, FRESH_WINDOW_S - 0.5);
     const generate = stubGenerator(ok());
 
-    expect(await getFact(user, generate)).toMatchObject({
+    expect(await getFact(user, DUNE_ID, generate)).toMatchObject({
       kind: "cached",
       fact: { text: "seeded fact" },
     });
@@ -86,7 +87,7 @@ describe("getFact: 60-second cache window", () => {
     await seedFact(user.id, FRESH_WINDOW_S);
     const generate = stubGenerator(ok());
 
-    expect(await getFact(user, generate)).toMatchObject({ kind: "fresh" });
+    expect(await getFact(user, DUNE_ID, generate)).toMatchObject({ kind: "fresh" });
     expect(generate.mock.calls[0]?.[0]).toEqual({
       title: "Dune",
       releaseYear: 2021,
@@ -122,9 +123,9 @@ describe("getFact: burst protection (advisory lock)", () => {
     const generate = stubGenerator(ok(), 200);
 
     const outcomes = await Promise.all([
-      getFact(user, generate),
-      getFact(user, generate),
-      getFact(user, generate),
+      getFact(user, DUNE_ID, generate),
+      getFact(user, DUNE_ID, generate),
+      getFact(user, DUNE_ID, generate),
     ]);
 
     expect(generate).toHaveBeenCalledOnce();
@@ -146,9 +147,9 @@ describe("getFact: burst protection (advisory lock)", () => {
       return { kind: "error" };
     });
 
-    const first = getFact(user, generate);
+    const first = getFact(user, DUNE_ID, generate);
     await vi.waitFor(() => expect(generate).toHaveBeenCalledOnce()); // first holds the lock
-    const waiter = getFact(user, generate); // starts while the attempt is in flight
+    const waiter = getFact(user, DUNE_ID, generate); // starts while the attempt is in flight
     await sleep(100);
     release();
 
@@ -168,10 +169,13 @@ describe("getFact: burst protection (advisory lock)", () => {
   it("S7: a request made after a failure was committed retries immediately", async () => {
     const user = await userWithFavorite("a");
     const failing = stubGenerator({ kind: "timeout" });
-    expect(await getFact(user, failing)).toEqual({ kind: "unavailable", cause: "timeout" });
+    expect(await getFact(user, DUNE_ID, failing)).toEqual({
+      kind: "unavailable",
+      cause: "timeout",
+    });
 
     const succeeding = stubGenerator(ok());
-    expect(await getFact(user, succeeding)).toMatchObject({ kind: "fresh" });
+    expect(await getFact(user, DUNE_ID, succeeding)).toMatchObject({ kind: "fresh" });
     expect(succeeding).toHaveBeenCalledOnce();
   });
 
@@ -188,10 +192,10 @@ describe("getFact: burst protection (advisory lock)", () => {
     });
 
     const [first, second] = await Promise.all([
-      getFact(user, generate),
+      getFact(user, DUNE_ID, generate),
       (async () => {
         await vi.waitFor(() => expect(generate).toHaveBeenCalledOnce());
-        return getFact(user, generate);
+        return getFact(user, DUNE_ID, generate);
       })(),
     ]);
 
@@ -205,13 +209,13 @@ describe("getFact: burst protection (advisory lock)", () => {
     const options = { lockTimeout: "300ms", genTimeoutMs: 800 };
     const hung = vi.fn<FactGenerator>(() => new Promise<GenerateResult>(() => {}));
 
-    const holder = getFact(user, hung, options);
+    const holder = getFact(user, DUNE_ID, hung, options);
     await vi.waitFor(() => expect(hung).toHaveBeenCalledOnce());
-    const waiter = await getFact(user, hung, options);
+    const waiter = await getFact(user, DUNE_ID, hung, options);
     expect(waiter).toEqual({ kind: "unavailable", cause: "lock_timeout" });
 
     expect(await holder).toEqual({ kind: "unavailable", cause: "timeout" });
-    const next = await getFact(user, stubGenerator(ok()), options);
+    const next = await getFact(user, DUNE_ID, stubGenerator(ok()), options);
     expect(next).toMatchObject({ kind: "fresh" });
   });
 });
@@ -229,7 +233,10 @@ describe("getFact: transaction deadline (Codex review)", () => {
 
     // 3s transaction, 2s reserved for the commit: the call gets about 1s, not 10s.
     const started = Date.now();
-    const outcome = await getFact(user, hung, { txTimeoutMs: 3_000, genTimeoutMs: 10_000 });
+    const outcome = await getFact(user, DUNE_ID, hung, {
+      txTimeoutMs: 3_000,
+      genTimeoutMs: 10_000,
+    });
 
     expect(outcome).toEqual({ kind: "unavailable", cause: "timeout" }); // committed, not rolled back
     expect(seenSignal?.aborted).toBe(true); // the fetch is cancelled, not left running
@@ -248,7 +255,7 @@ describe("getFact: failure handling", () => {
     const user = await userWithFavorite("a");
     await seedFact(user.id, 300, "last good fact");
 
-    expect(await getFact(user, stubGenerator(result))).toMatchObject({
+    expect(await getFact(user, DUNE_ID, stubGenerator(result))).toMatchObject({
       kind: "fallback",
       cause,
       fact: { text: "last good fact" },
@@ -258,7 +265,7 @@ describe("getFact: failure handling", () => {
   it("S6: with nothing saved, returns unavailable (shown as a retryable error)", async () => {
     const user = await userWithFavorite("a");
 
-    expect(await getFact(user, stubGenerator({ kind: "error" }))).toEqual({
+    expect(await getFact(user, DUNE_ID, stubGenerator({ kind: "error" }))).toEqual({
       kind: "unavailable",
       cause: "error",
     });
@@ -268,18 +275,20 @@ describe("getFact: failure handling", () => {
     const user = await userWithFavorite("a");
     await seedFact(user.id, 300);
 
-    await getFact(user, stubGenerator({ kind: "error" }));
+    await getFact(user, DUNE_ID, stubGenerator({ kind: "error" }));
 
     expect(await factCount()).toBe(1);
     expect((await latestFact(db, user.id, DUNE))?.ageSeconds).toBeGreaterThanOrEqual(300);
   });
 
-  it("returns no_movie before onboarding", async () => {
+  it("returns no_movie for a movie we hold no snapshot of", async () => {
     const row = await db.user.create({ data: { googleSub: "x", email: "x@example.com" } });
     const user = await getSessionUser((await createSession(row.id as UserId)).token);
     if (!user) throw new Error("expected a session user");
+    const generate = stubGenerator(ok());
 
-    expect(await getFact(user, stubGenerator(ok()))).toEqual({ kind: "no_movie" });
+    expect(await getFact(user, 999_999 as TmdbId, generate)).toEqual({ kind: "no_movie" });
+    expect(generate).not.toHaveBeenCalled();
   });
 });
 
@@ -292,7 +301,7 @@ describe("getFact: authorization (S1)", () => {
     await seedFact(bob.id, 1, "bob's fresh fact");
 
     // Bob has a fresh fact for Dune; Ada still gets her own generation.
-    const fresh = await getFact(ada, stubGenerator(ok("Ada's fact.")));
+    const fresh = await getFact(ada, DUNE_ID, stubGenerator(ok("Ada's fact.")));
     expect(fresh).toMatchObject({ kind: "fresh", fact: { text: "Ada's fact." } });
 
     // And when Ada's generation fails with nothing of her own saved, she gets
@@ -301,7 +310,124 @@ describe("getFact: authorization (S1)", () => {
     const ada2 = await userWithFavorite("ada2");
     const bob2 = await userWithFavorite("bob2");
     await seedFact(bob2.id, 300, "bob's old fact");
-    const failed: FactOutcome = await getFact(ada2, stubGenerator({ kind: "error" }));
+    const failed: FactOutcome = await getFact(ada2, DUNE_ID, stubGenerator({ kind: "error" }));
     expect(failed).toEqual({ kind: "unavailable", cause: "error" });
+  });
+});
+
+const ARRIVAL = 329865 as TmdbId;
+const HER = 152601 as TmdbId;
+
+async function addMovie(tmdbId: TmdbId, title: string) {
+  await db.movie.create({ data: { tmdbId, title, releaseYear: 2016 } });
+}
+
+/** A generator that holds until `release()` is called, then answers. */
+function heldGenerator(text: string) {
+  let release: () => void = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const generate = vi.fn<FactGenerator>(async () => {
+    await released;
+    return ok(text);
+  });
+  return { generate, release: () => release() };
+}
+
+/** Polls until `n` OpenAI calls have started. */
+async function untilCalls(generate: { mock: { calls: unknown[] } }, n: number) {
+  for (let i = 0; i < 200 && generate.mock.calls.length < n; i += 1) await sleep(10);
+  expect(generate.mock.calls.length).toBe(n);
+}
+
+describe("getFact: any movie in the graph (decision 17)", () => {
+  beforeEach(resetDb);
+
+  it("answers for a movie that isn't the favorite, with its own history", async () => {
+    const user = await userWithFavorite("a");
+    await addMovie(ARRIVAL, "Arrival");
+    await seedFact(user.id, 1, "fresh Dune fact");
+
+    const arrival = await getFact(user, ARRIVAL, stubGenerator(ok("An Arrival fact.")));
+
+    expect(arrival).toMatchObject({ kind: "fresh", fact: { text: "An Arrival fact." } });
+    // Dune's fresh fact neither answered for Arrival nor was replaced by it.
+    expect((await latestFact(db, user.id, DUNE))?.text).toBe("fresh Dune fact");
+  });
+});
+
+describe("getFact: per-user generation slots (decision 18)", () => {
+  beforeEach(resetDb);
+
+  it("a third simultaneous generation for another movie is busy, and writes nothing", async () => {
+    const user = await userWithFavorite("a");
+    await addMovie(ARRIVAL, "Arrival");
+    await addMovie(HER, "Her");
+    const held = heldGenerator("held");
+
+    const first = getFact(user, DUNE_ID, held.generate);
+    const second = getFact(user, ARRIVAL, held.generate);
+    await untilCalls(held.generate, 2);
+
+    const third = stubGenerator(ok());
+    expect(await getFact(user, HER, third)).toEqual({ kind: "unavailable", cause: "busy" });
+    expect(third).not.toHaveBeenCalled();
+    // No attempt was claimed for Her, so nothing can be shared as a failure.
+    expect(await db.factGenState.count({ where: { movieId: HER } })).toBe(0);
+
+    held.release();
+    await Promise.all([first, second]);
+    // With the slots free again, Her generates normally.
+    expect(await getFact(user, HER, stubGenerator(ok()))).toMatchObject({ kind: "fresh" });
+  });
+
+  it("busy falls back to the saved fact when there is one", async () => {
+    const user = await userWithFavorite("a");
+    await addMovie(ARRIVAL, "Arrival");
+    await seedFact(user.id, 300, "an old Dune fact");
+    const held = heldGenerator("held");
+
+    const holder = getFact(user, ARRIVAL, held.generate);
+    await untilCalls(held.generate, 1);
+
+    expect(await getFact(user, DUNE_ID, stubGenerator(ok()), { generationSlots: 1 })).toMatchObject(
+      { kind: "fallback", cause: "busy", fact: { text: "an old Dune fact" } },
+    );
+    held.release();
+    await holder;
+  });
+
+  it("requests waiting on a movie's lock don't hold a slot", async () => {
+    const user = await userWithFavorite("a");
+    await addMovie(ARRIVAL, "Arrival");
+    const held = heldGenerator("Dune, generated once.");
+
+    const holder = getFact(user, DUNE_ID, held.generate); // slot 1, generating
+    await untilCalls(held.generate, 1);
+    const waiter = getFact(user, DUNE_ID, held.generate); // waits on Dune's lock, no slot
+    await sleep(100);
+
+    // Slot 2 is still free for another movie.
+    expect(await getFact(user, ARRIVAL, stubGenerator(ok()))).toMatchObject({ kind: "fresh" });
+
+    held.release();
+    expect(await holder).toMatchObject({ kind: "fresh" });
+    expect(await waiter).toMatchObject({ kind: "cached", fact: { text: "Dune, generated once." } });
+    expect(held.generate).toHaveBeenCalledOnce();
+  });
+
+  it("slots are per user: another user's generations don't count", async () => {
+    const ada = await userWithFavorite("ada");
+    const bob = await userWithFavorite("bob");
+    await addMovie(ARRIVAL, "Arrival");
+    const held = heldGenerator("held");
+
+    const busyAda = [getFact(ada, DUNE_ID, held.generate), getFact(ada, ARRIVAL, held.generate)];
+    await untilCalls(held.generate, 2);
+
+    expect(await getFact(bob, DUNE_ID, stubGenerator(ok()))).toMatchObject({ kind: "fresh" });
+    held.release();
+    await Promise.all(busyAda);
   });
 });
