@@ -29,7 +29,8 @@
 | `counter-abort-exceptS4` | pass S1–S3, S5–S7, L1 | 9,333,400 |
 | `counter-noabort` | **pass, all invariants** | 2,095,192 |
 | `counter-abort-S4committed` (proposed S4′) | **violated** via lock_timeout (F3) | 799,108 |
-| **`decided`**: counter (F1) + S4′ (F2) + lock_timeout exempt (F3) = **the approved design** | **pass**: S1–S3, S4Final, S6, S7, S5, L1 | 9,333,400 |
+| **`decided`**: counter (F1) + S4′ (F2) + exemptions for lock_timeout (F3) and pool timeout (F4), **with pool timeouts and aborts enabled** = **the approved design** | **pass**: S1–S3, S4Final, S6, S7, S5, L1 | 13,297,148 |
+| `decided-F4-lockOnly` (non-vacuity check: only the F3 exemption) | S4FinalLockOnly violated in 7 steps, as expected | 23,472 |
 | `decided-timestamp-F1` (non-vacuity check) | S4Final violated, as expected | 23,693 |
 | `decided-mut-noCmp` (non-vacuity check) | S7 violated, as expected | 31,300 |
 
@@ -45,10 +46,12 @@ Mutations, all run on `counter-noabort`, which passes. Every invariant is broken
 
 Witnesses (each must be violated, which proves the scenario is reachable): shared failure, fallback, retry after failure, waiter served cached, regeneration after expiry. All 5 are reached.
 
-## Findings (all three resolved; the approved design is the `decided` config)
+## Findings (all resolved; the approved design is the `decided` config)
 - **F1, G2 timestamp ties.** r2 starts at t=0 while r1 is generating. r1 fails with `failedAt = 0`, so `0 > 0` is false and r2 starts its own attempt. With real Postgres this needs the DB wall clock to fail to advance between the two reads (µs resolution, or an NTP step backward). It's rare, but it isn't guaranteed. **Proposal:** order failures with a per-(user, movie) `attemptNo` counter instead of timestamps (`counter` configs). That removes any dependence on the clock.
 - **F2, rollback or crash with S4 as written.** The holder's transaction rolls back, nothing is committed, and the waiter starts its own attempt. Any design behaves this way: there is no outcome to share. **Proposal:** S4′ says S4 applies only to committed outcomes.
 - **F3, lock_timeout after an abort.** r1 aborts, r2 (waiting) generates, and r3, queued behind both, hits lock_timeout. Its response is fallback/error (S6 holds), but it didn't get r2's outcome. **Proposal:** either exempt lock-timeout responses from S4′, or set lock_timeout ≥ tx timeout + OpenAI timeout.
+
+- **F4, connection-pool timeout (found by the Codex review of the code).** Prisma's `maxWait` can fire while a request waits for a pooled connection, before it reaches the advisory lock. That is a third way to give up while waiting, and without an exemption it breaks S4 (`decided-F4-lockOnly`). **Resolution (author):** exempt it like F3. The model lets a waiter give up at any time (`AllowPoolTimeout`). In both timeout branches, a fact saved meanwhile by another request is returned as a cache hit, matching the code's recovery path.
 
 ## Proposed tests (fact service vs. real Postgres, OpenAI stubbed)
 1. **S2, from (a):** 3 parallel requests, same user and movie, no fact, stub succeeds after 200 ms → 1 OpenAI call, 1 `Fact` row, all 3 responses carry the same fact id.

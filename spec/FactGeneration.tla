@@ -25,6 +25,7 @@ CONSTANTS Users, Movies, Requests,
           LockTimeout,  \* Postgres lock_timeout (scaled)
           MaxTime,      \* bound on the clock so the state space is finite
           AllowAbort,   \* rollback (tx timeout) or process death while generating
+          AllowPoolTimeout, \* F4: give up waiting for a pooled connection, at any time
           FailureOrder, \* "timestamp" (G2 as decided) or "counter" (proposed refinement)
           Mutations     \* {} = the real design
 
@@ -123,9 +124,29 @@ Lock:
   or
     await ~M("noLockTimeout") /\ clock - txStart[self] >= LockTimeout;
     lockQueue[K(self)] := Without(lockQueue[K(self)], self);
-    decided[self] := "lockTimeout";
-    ghostLatest[self] := TrueLatest(self);
-    resp[self] := FailResp(self);
+    \* Recovery (code's catch block): a fact someone else just saved is a cache hit.
+    if Fresh(K(self), clock) then
+      decided[self] := "cached";
+      cacheAge[self] := Age(K(self));
+      resp[self] := [kind |-> "cached", fact |-> CodeLatest(self)];
+    else
+      decided[self] := "lockTimeout";
+      ghostLatest[self] := TrueLatest(self);
+      resp[self] := FailResp(self);
+    end if;
+    goto Done;
+  or \* F4: Prisma's pool maxWait fires before the request reaches the lock
+    await AllowPoolTimeout;
+    lockQueue[K(self)] := Without(lockQueue[K(self)], self);
+    if Fresh(K(self), clock) then
+      decided[self] := "cached";
+      cacheAge[self] := Age(K(self));
+      resp[self] := [kind |-> "cached", fact |-> CodeLatest(self)];
+    else
+      decided[self] := "poolTimeout";
+      ghostLatest[self] := TrueLatest(self);
+      resp[self] := FailResp(self);
+    end if;
     goto Done;
   end either;
 Recheck:
@@ -309,17 +330,36 @@ Lock(self) == /\ pc[self] = "Lock"
                     /\ lockHolder' = [lockHolder EXCEPT ![K(self)] = self]
                     /\ lockQueue' = [lockQueue EXCEPT ![K(self)] = Without(lockQueue[K(self)], self)]
                     /\ pc' = [pc EXCEPT ![self] = "Recheck"]
-                    /\ UNCHANGED <<resp, decided, ghostLatest>>
+                    /\ UNCHANGED <<resp, decided, cacheAge, ghostLatest>>
                  \/ /\ ~M("noLockTimeout") /\ clock - txStart[self] >= LockTimeout
                     /\ lockQueue' = [lockQueue EXCEPT ![K(self)] = Without(lockQueue[K(self)], self)]
-                    /\ decided' = [decided EXCEPT ![self] = "lockTimeout"]
-                    /\ ghostLatest' = [ghostLatest EXCEPT ![self] = TrueLatest(self)]
-                    /\ resp' = [resp EXCEPT ![self] = FailResp(self)]
+                    /\ IF Fresh(K(self), clock)
+                          THEN /\ decided' = [decided EXCEPT ![self] = "cached"]
+                               /\ cacheAge' = [cacheAge EXCEPT ![self] = Age(K(self))]
+                               /\ resp' = [resp EXCEPT ![self] = [kind |-> "cached", fact |-> CodeLatest(self)]]
+                               /\ UNCHANGED ghostLatest
+                          ELSE /\ decided' = [decided EXCEPT ![self] = "lockTimeout"]
+                               /\ ghostLatest' = [ghostLatest EXCEPT ![self] = TrueLatest(self)]
+                               /\ resp' = [resp EXCEPT ![self] = FailResp(self)]
+                               /\ UNCHANGED cacheAge
+                    /\ pc' = [pc EXCEPT ![self] = "Done"]
+                    /\ UNCHANGED lockHolder
+                 \/ /\ AllowPoolTimeout
+                    /\ lockQueue' = [lockQueue EXCEPT ![K(self)] = Without(lockQueue[K(self)], self)]
+                    /\ IF Fresh(K(self), clock)
+                          THEN /\ decided' = [decided EXCEPT ![self] = "cached"]
+                               /\ cacheAge' = [cacheAge EXCEPT ![self] = Age(K(self))]
+                               /\ resp' = [resp EXCEPT ![self] = [kind |-> "cached", fact |-> CodeLatest(self)]]
+                               /\ UNCHANGED ghostLatest
+                          ELSE /\ decided' = [decided EXCEPT ![self] = "poolTimeout"]
+                               /\ ghostLatest' = [ghostLatest EXCEPT ![self] = TrueLatest(self)]
+                               /\ resp' = [resp EXCEPT ![self] = FailResp(self)]
+                               /\ UNCHANGED cacheAge
                     /\ pc' = [pc EXCEPT ![self] = "Done"]
                     /\ UNCHANGED lockHolder
               /\ UNCHANGED << clock, sess, lastSuccessAt, failedAt, attemptNo, 
                               failedNo, seenNo, facts, txStart, startedAt, 
-                              genStart, trueLast, genAge, cacheAge, overlapped, 
+                              genStart, trueLast, genAge, overlapped, 
                               failSince, attemptSeq, outcome, nextSeq >>
 
 Recheck(self) == /\ pc[self] = "Recheck"
@@ -444,7 +484,7 @@ Termination == <>(\A self \in ProcSet: pc[self] = "Done")
 TypeOK ==
   /\ clock \in 0..MaxTime
   /\ lockHolder \in [Keys -> Requests \cup {"-"}]
-  /\ decided \in [Requests -> {"none", "cached", "shared", "gen", "lockTimeout"}]
+  /\ decided \in [Requests -> {"none", "cached", "shared", "gen", "lockTimeout", "poolTimeout"}]
   /\ resp \in [Requests -> [kind : {"none", "cached", "fresh", "fallback", "error", "crash"},
                             fact : {NoFact} \cup facts]]
 
@@ -480,9 +520,13 @@ S4CommittedFor(r) ==
                 /\ (outcome[g] = "failure" => decided[r] = "shared"))
 S4Committed == \A r \in Requests : S4CommittedFor(r)
 
-\* S4'' (F3, approved): the invariant the design is held to. A lock_timeout
-\*     response is exempt from S4'; S6 still constrains what it returns.
-S4Final == \A r \in Requests : decided[r] # "lockTimeout" => S4CommittedFor(r)
+\* S4'' (F3 + F4, approved): the invariant the design is held to. Giving up while
+\*     waiting (lock_timeout, or the connection pool's maxWait) is exempt from
+\*     S4'; S6 still constrains what such a response returns.
+S4Final == \A r \in Requests : decided[r] \notin {"lockTimeout", "poolTimeout"} => S4CommittedFor(r)
+
+\* F4 non-vacuity: with only the F3 exemption, pool timeouts must break S4.
+S4FinalLockOnly == \A r \in Requests : decided[r] # "lockTimeout" => S4CommittedFor(r)
 
 \* S5: lastSuccessAt changes only when a fact is saved with that timestamp.
 S5 == [][\A k \in Keys : lastSuccessAt'[k] # lastSuccessAt[k] =>

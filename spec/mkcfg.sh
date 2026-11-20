@@ -3,7 +3,7 @@
 cd "$(dirname "$0")"
 SAFE="TypeOK S1 S2 S3 S4 S6 S7"; LIVE="S5 L1"
 mk() { { echo "SPECIFICATION Spec"; echo "CONSTANTS"; cat cfg/_common.inc
-         echo "  AllowAbort = $2"; echo "  FailureOrder = \"$3\""; echo "  Mutations = $4"
+         echo "  AllowAbort = $2"; echo "  FailureOrder = \"$3\""; echo "  Mutations = $4"; echo "  AllowPoolTimeout = ${7:-FALSE}"
          echo "INVARIANTS $5"; if [ -n "${6:-}" ]; then echo "PROPERTIES $6"; fi; } > "cfg/$1.cfg"; }
 # The design as decided (timestamps for G2), then variants that isolate each finding
 mk base               TRUE  timestamp '{}' "$SAFE" "$LIVE"
@@ -35,8 +35,10 @@ mk mut-i-leakLock-L1          FALSE counter   '{"leakLock"}' "TypeOK" "L1"
 mk counter-abort-S4committed   TRUE counter   '{}' "S4Committed"
 mk timestamp-abort-S4committed TRUE timestamp '{}' "S4Committed"
 # Approved design (F1 counter, F2 S4', F3 lock_timeout exempt): everything, aborts on
-mk decided                TRUE  counter   '{}' "TypeOK S1 S2 S3 S4Final S6 S7" "$LIVE"
+mk decided                TRUE  counter   '{}' "TypeOK S1 S2 S3 S4Final S6 S7" "$LIVE" TRUE
 # Non-vacuity of S4Final: the rejected timestamp ordering must still violate it (F1)
 mk decided-timestamp-F1   FALSE timestamp '{}' "S4Final"
 # Non-vacuity of S4Final: dropping the attemptNo comparison must violate something
 mk decided-mut-noCmp      TRUE  counter   '{"noStartedAtCmp"}' "TypeOK S1 S2 S3 S4Final S6 S7"
+# F4: pool-acquisition timeouts. Without their exemption S4 must fail (non-vacuity).
+mk decided-F4-lockOnly    TRUE  counter   '{}' "S4FinalLockOnly" "" TRUE

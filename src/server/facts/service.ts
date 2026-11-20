@@ -39,7 +39,7 @@ export type FailureCause =
   | "abstained" // the model wasn't confident (or refused)
   | "shared" // another request's attempt just failed and we waited on it (S4)
   | "lock_timeout" // waited too long behind other attempts (exempt from S4, F3)
-  | "aborted"; // our transaction rolled back (F2)
+  | "aborted"; // rolled back (F2), or no pooled connection in time (exempt from S4, F4)
 
 export type FactOutcome =
   | { kind: "fresh"; fact: SavedFact }
