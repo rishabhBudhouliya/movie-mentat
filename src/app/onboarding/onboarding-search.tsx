@@ -15,13 +15,13 @@ export function OnboardingSearch() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const savingRef = useRef(false); // synchronous guard against double submits
-  const mounted = useRef(true);
-  useEffect(
-    () => () => {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
       mounted.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   async function save(movie: MovieSummary) {
     if (savingRef.current) return;

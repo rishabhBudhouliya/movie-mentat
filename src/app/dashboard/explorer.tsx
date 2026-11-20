@@ -83,6 +83,7 @@ export function Explorer({
                     ) : (
                       <button
                         type="button"
+                        disabled={pending !== null}
                         onClick={() => select(step.movie.tmdbId)}
                         className="rounded text-zinc-400 underline-offset-4 hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                       >
@@ -97,6 +98,7 @@ export function Explorer({
           {graph.selectedId !== graph.rootId ? (
             <button
               type="button"
+              disabled={pending !== null}
               onClick={() => select(graph.rootId)}
               className="rounded-full border border-zinc-700 px-3.5 py-1.5 text-sm font-semibold text-zinc-200 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >

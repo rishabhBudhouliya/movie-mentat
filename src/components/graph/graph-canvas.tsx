@@ -186,9 +186,13 @@ export function GraphCanvas({
     return () => observer.disconnect();
   }, [centerOn]);
 
+  useEffect(() => {
+    if (disabled) drag.current = null;
+  }, [disabled]);
+
   // Drag the background to look around.
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if ((event.target as HTMLElement).closest("button") || !world.current) return;
+    if (disabled || (event.target as HTMLElement).closest("button") || !world.current) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = {
       x: event.clientX,
@@ -200,7 +204,7 @@ export function GraphCanvas({
   }
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
     const start = drag.current;
-    if (!start || !world.current) return;
+    if (disabled || !start || !world.current) return;
     gsap.set(world.current, {
       x: start.camX + event.clientX - start.x,
       y: start.camY + event.clientY - start.y,
@@ -270,6 +274,7 @@ export function GraphCanvas({
             <button
               key={key}
               type="button"
+              disabled={disabled}
               data-key={`junction|${key}`}
               data-x={junction.x}
               data-y={junction.y}
@@ -301,6 +306,7 @@ export function GraphCanvas({
             <button
               key={movieId}
               type="button"
+              disabled={disabled}
               data-key={`node|${movieId}`}
               data-x={node.pos.x}
               data-y={node.pos.y}
@@ -334,6 +340,7 @@ export function GraphCanvas({
 
       <button
         type="button"
+        disabled={disabled}
         onClick={() => centerOn(focus)}
         className="absolute right-3 bottom-3 rounded-full border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
       >

@@ -92,6 +92,10 @@ export function DashboardFact({
         setShown(fromEntry(entry));
         return;
       }
+      if (result.error.status === 401) {
+        window.location.assign("/");
+        return;
+      }
       setShown((prev) => {
         const previous = prev?.key === key && prev.state.kind === "fact" ? prev.state : null;
         return {
@@ -113,11 +117,12 @@ export function DashboardFact({
   );
 
   useEffect(() => {
-    if (movieId === null || currentKey === null) {
-      gate.current.next(); // ignore responses for the movie being replaced
-      return;
+    if (movieId !== null && currentKey !== null) {
+      void load(currentKey, movieId, false);
     }
-    void load(currentKey, movieId, false);
+    return () => {
+      gate.current.next(); // ignore responses after leaving this movie or dashboard
+    };
   }, [currentKey, movieId, load]);
 
   useEffect(() => {

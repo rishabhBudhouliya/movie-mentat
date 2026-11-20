@@ -244,6 +244,43 @@ describe("getFact: transaction deadline (Codex review)", () => {
   });
 });
 
+describe("getFact: database pool acquisition", () => {
+  beforeEach(resetDb);
+
+  it("bounds the wait for a read before the transaction when the pool is full", async () => {
+    const user = await userWithFavorite("pool");
+    const generate = stubGenerator(ok());
+    let release = () => {};
+    const waitForRelease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // node-postgres defaults to ten connections per pool.
+    const poolSize = 10;
+    let acquired = 0;
+    const holders = Array.from({ length: poolSize }, () =>
+      db.$transaction(
+        async () => {
+          acquired += 1;
+          await waitForRelease;
+        },
+        { timeout: 12_000 },
+      ),
+    );
+    const held = Promise.all(holders);
+    try {
+      await Promise.race([vi.waitFor(() => expect(acquired).toBe(poolSize)), held]);
+      const start = Date.now();
+      await expect(getFact(user, DUNE_ID, generate)).rejects.toThrow();
+      expect(Date.now() - start).toBeLessThan(8_000);
+      expect(generate).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await held;
+    }
+    expect(await getFact(user, DUNE_ID, generate)).toMatchObject({ kind: "fresh" });
+  }, 15_000);
+});
+
 describe("getFact: failure handling", () => {
   beforeEach(resetDb);
 

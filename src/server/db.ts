@@ -9,7 +9,10 @@ export function getDb(): PrismaClient {
   if (globalForPrisma.prisma) return globalForPrisma.prisma;
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set");
-  const client = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  const client = new PrismaClient({
+    // Bound pool acquisition for ordinary queries as well as transactions.
+    adapter: new PrismaPg({ connectionString, connectionTimeoutMillis: 5_000 }),
+  });
   // Cache on globalThis so dev hot reloads reuse one connection pool.
   globalForPrisma.prisma = client;
   return client;
